@@ -18,7 +18,7 @@ export default function Footer() {
       <span className="font-semibold text-fg/80">DockerUpdates</span>
       <span aria-hidden>|</span>
       <span>
-        Ver: <span className="font-mono">{version ?? '…'}</span>
+        Version: <span className="font-mono">{version ?? '…'}</span>
       </span>
       <span aria-hidden>|</span>
       <span>
