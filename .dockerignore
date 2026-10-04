@@ -9,6 +9,6 @@ backend/public
 Dockerfile
 .dockerignore
 *.log
-Readme.txt
+SECURITY.md
 README.md
 backend/data

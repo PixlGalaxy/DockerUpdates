@@ -28,6 +28,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY backend/ ./
 COPY --from=frontend-build /app/frontend/dist ./public
+COPY LICENSE /app/LICENSE
 
 EXPOSE 3000
 
