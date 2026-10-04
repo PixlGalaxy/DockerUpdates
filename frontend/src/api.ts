@@ -1,7 +1,13 @@
 import type {
+  BulkSummary,
+  CheckResult,
+  ContainerStats,
+  CheckSummary,
   ContainerAction,
   ContainersResponse,
-  NewContainer,
+  ContainerSpec,
+  UpdateAllSummary,
+  UpdateResult,
 } from './types'
 
 export class UnauthorizedError extends Error {
@@ -40,16 +46,23 @@ export const api = {
   logout: () => post<Ok>('/api/auth/logout'),
 
   list: () => request<ContainersResponse>('/api/containers'),
+  stats: () => request<Record<string, ContainerStats>>('/api/stats'),
   action: (id: string, action: ContainerAction) =>
     post<Ok>(`/api/containers/${id}/${action}`),
   remove: (id: string) =>
     request<Ok>(`/api/containers/${id}`, { method: 'DELETE' }),
   setAutostart: (id: string, enabled: boolean) =>
     post<Ok>(`/api/containers/${id}/autostart`, { enabled }),
-  checkUpdate: (id: string) => post<Ok>(`/api/containers/${id}/check-update`),
-  checkAllUpdates: () => post<Ok>('/api/containers/check-updates'),
-  update: (id: string) => post<Ok>(`/api/containers/${id}/update`),
-  updateAll: () => post<Ok>('/api/containers/update-all'),
-  bulk: (action: ContainerAction) => post<Ok>(`/api/containers/bulk/${action}`),
-  create: (data: NewContainer) => post<{ id: string }>('/api/containers', data),
+  checkUpdate: (id: string) => post<CheckResult>(`/api/containers/${id}/check-update`),
+  checkAllUpdates: () => post<CheckSummary>('/api/containers/check-updates'),
+  update: (id: string) => post<UpdateResult>(`/api/containers/${id}/update`),
+  updateAll: () => post<UpdateAllSummary>('/api/containers/update-all'),
+  bulk: (action: ContainerAction) => post<BulkSummary>(`/api/containers/bulk/${action}`),
+  create: (spec: ContainerSpec) => post<{ id: string }>('/api/containers', spec),
+  spec: (id: string) => request<ContainerSpec>(`/api/containers/${id}/spec`),
+  edit: (id: string, spec: ContainerSpec) =>
+    request<{ name: string }>(`/api/containers/${id}`, { method: 'PUT', body: JSON.stringify(spec) }),
+  networks: () => request<string[]>('/api/networks'),
+  checkExtraParams: (extraParams: string) =>
+    post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
 }

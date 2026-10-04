@@ -15,6 +15,7 @@ interface Props {
   onCheckUpdate: (id: string) => void
   onUpdate: (id: string) => void
   onCopy: (text: string) => void
+  onEdit: (id: string) => void
 }
 
 export default function ContainerTable({
@@ -85,6 +86,7 @@ export default function ContainerTable({
                   onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
                   onUpdate={() => handlers.onUpdate(c.id)}
                   onCopy={handlers.onCopy}
+                  onEdit={() => handlers.onEdit(c.id)}
                 />
               ))}
 

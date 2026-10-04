@@ -5,13 +5,18 @@ import {
   CircleDashed,
   CloudDownload,
   Copy,
+  HardDrive,
   LoaderCircle,
+  LockKeyhole,
   Pause,
+  Pencil,
   Play,
   RefreshCw,
   RotateCw,
+  ShieldCheck,
   Square,
   Trash2,
+  TriangleAlert,
 } from 'lucide-react'
 import { useState } from 'react'
 import type { ContainerAction, ContainerInfo } from '../types'
@@ -30,6 +35,7 @@ interface Props {
   onCheckUpdate: () => void
   onUpdate: () => void
   onCopy: (text: string) => void
+  onEdit: () => void
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -54,12 +60,16 @@ export default function ContainerRow({
   onCheckUpdate,
   onUpdate,
   onCopy,
+  onEdit,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const [iconFailed, setIconFailed] = useState(false)
   const active = isActive(c)
   const state = STATE[c.state] ?? STATE.exited
   const { repo, tag } = splitImage(c.image)
-  const memPct = c.memLimit ? (c.memUsage / c.memLimit) * 100 : 0
+  // Prefer the limit configured on the container; otherwise Docker reports the host RAM
+  const memLimit = c.memLimitConfigured || c.memLimit
+  const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
   const visibleVolumes = expanded ? c.volumes : c.volumes.slice(0, 2)
   const confirmRemove = () => {
     if (confirm(`Remove container "${c.name}"? This cannot be undone.`)) onRemove()
@@ -70,14 +80,34 @@ export default function ContainerRow({
       {/* Application */}
       <td className={td}>
         <div className="flex items-center gap-3">
-          <div
-            className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm ${gradientFor(c.name)}`}
-          >
-            {c.name.slice(0, 2)}
-          </div>
+          {c.icon && !iconFailed ? (
+            <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm">
+              <img
+                src={c.icon}
+                alt=""
+                loading="lazy"
+                className="size-full object-contain"
+                onError={() => setIconFailed(true)}
+              />
+            </div>
+          ) : (
+            <div
+              className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm ${gradientFor(c.name)}`}
+            >
+              {c.name.slice(0, 2)}
+            </div>
+          )}
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="truncate font-semibold">{c.name}</span>
+              {c.isSelf && (
+                <span
+                  title="DockerUpdates itself: it is never stopped, paused or removed by bulk actions"
+                  className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-600 uppercase dark:text-sky-400"
+                >
+                  <ShieldCheck size={11} /> This app
+                </span>
+              )}
               <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${state.text}`}>
                 <span className="relative flex size-2">
                   {state.pulse && (
@@ -108,25 +138,51 @@ export default function ContainerRow({
       <td className={td}>
         <div className="flex flex-col items-start gap-1.5">
           {busy ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
               <LoaderCircle size={12} className="animate-spin" /> Working…
             </span>
           ) : c.updateStatus === 'up-to-date' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
               <CircleCheck size={12} /> Up to date
             </span>
           ) : c.updateStatus === 'update-available' ? (
             <Button variant="warning" size="xs" icon={<CloudDownload size={13} />} onClick={onUpdate}>
               Update available
             </Button>
+          ) : c.updateStatus === 'auth-required' ? (
+            <span
+              title={c.updateMessage}
+              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400"
+            >
+              <LockKeyhole size={12} /> Auth required
+            </span>
+          ) : c.updateStatus === 'local' ? (
+            <span
+              title={c.updateMessage ?? 'Local image ID, there is no registry to check'}
+              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-muted"
+            >
+              <HardDrive size={12} /> Local image
+            </span>
+          ) : c.updateStatus === 'error' ? (
+            <span
+              title={c.updateMessage}
+              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+            >
+              <TriangleAlert size={12} /> Check failed
+            </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-muted">
               <CircleDashed size={12} /> Not checked
             </span>
           )}
           <div className="flex items-center gap-1">
             <Chip>{tag}</Chip>
-            <IconButton label="Check for update" className="size-6" disabled={busy} onClick={onCheckUpdate}>
+            <IconButton
+              label="Check for update"
+              className="size-6"
+              disabled={busy || c.updateStatus === 'local'}
+              onClick={onCheckUpdate}
+            >
               <RefreshCw size={12} />
             </IconButton>
           </div>
@@ -210,7 +266,10 @@ export default function ContainerRow({
           <div className="space-y-2">
             <div>
               <div className="mb-1 flex justify-between text-[11px]">
-                <span className="text-muted">CPU</span>
+                <span className="text-muted">
+                  CPU
+                  {c.cpuLimit > 0 && <span title="CPU limit configured on the container"> · max {c.cpuLimit} cores</span>}
+                </span>
                 <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
               </div>
               <Meter value={c.cpuPercent} tone="cpu" />
@@ -220,7 +279,20 @@ export default function ContainerRow({
                 <span className="text-muted">RAM</span>
                 <span className="font-medium tabular-nums">
                   {formatBytes(c.memUsage)}
-                  <span className="text-muted"> / {c.memLimit ? formatBytes(c.memLimit) : '∞'}</span>
+                  {c.memLimitConfigured > 0 ? (
+                    <span className="text-muted" title="Memory limit configured on the container (--memory)">
+                      {' '}
+                      / {formatBytes(c.memLimitConfigured)}
+                    </span>
+                  ) : (
+                    <span
+                      className="text-muted"
+                      title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one with --memory in Edit → Extra parameters.`}
+                    >
+                      {' '}
+                      / no limit
+                    </span>
+                  )}
                 </span>
               </div>
               <Meter value={memPct} tone="mem" />
@@ -246,7 +318,12 @@ export default function ContainerRow({
       <td className={`${td} text-right`}>
         <div className="flex items-center justify-end gap-0.5">
           {c.state === 'running' ? (
-            <IconButton label="Stop" tone="danger" disabled={busy} onClick={() => onAction('stop')}>
+            <IconButton
+              label={c.isSelf ? 'DockerUpdates cannot stop itself' : 'Stop'}
+              tone="danger"
+              disabled={busy || c.isSelf}
+              onClick={() => onAction('stop')}
+            >
               <Square size={15} />
             </IconButton>
           ) : c.state === 'paused' ? (
@@ -261,13 +338,19 @@ export default function ContainerRow({
           <IconButton label="Restart" disabled={busy || !active} onClick={() => onAction('restart')}>
             <RotateCw size={15} />
           </IconButton>
+          {!c.isSelf && (
+            <IconButton label="Edit" disabled={busy} onClick={onEdit}>
+              <Pencil size={15} />
+            </IconButton>
+          )}
           <RowMenu
             items={[
-              { label: 'Pause', icon: <Pause size={15} />, onSelect: () => onAction('pause'), hidden: c.state !== 'running' },
-              { label: 'Check for update', icon: <RefreshCw size={15} />, onSelect: onCheckUpdate },
-              { label: 'Force update', icon: <CloudDownload size={15} />, onSelect: onUpdate },
+              { label: 'Pause', icon: <Pause size={15} />, onSelect: () => onAction('pause'), hidden: c.state !== 'running' || c.isSelf },
+              { label: 'Edit', icon: <Pencil size={15} />, onSelect: onEdit, hidden: c.isSelf },
+              { label: 'Check for update', icon: <RefreshCw size={15} />, onSelect: onCheckUpdate, hidden: c.updateStatus === 'local' },
+              { label: 'Force update', icon: <CloudDownload size={15} />, onSelect: onUpdate, hidden: c.updateStatus === 'local' },
               { label: 'Copy ID', icon: <Copy size={15} />, onSelect: () => onCopy(c.id) },
-              { label: 'Remove', icon: <Trash2 size={15} />, onSelect: confirmRemove, danger: true, separatorBefore: true },
+              { label: 'Remove', icon: <Trash2 size={15} />, onSelect: confirmRemove, danger: true, separatorBefore: true, hidden: c.isSelf },
             ]}
           />
         </div>

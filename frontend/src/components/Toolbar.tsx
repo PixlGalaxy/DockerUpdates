@@ -67,7 +67,7 @@ export default function Toolbar({
               key={action}
               type="button"
               disabled={locked}
-              title={label}
+              title={action === 'stop' || action === 'pause' ? `${label} (except DockerUpdates)` : label}
               onClick={() => onBulk(action)}
               className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-medium transition-colors hover:bg-surface-2 disabled:opacity-50 ${i > 0 ? 'border-l border-line' : ''}`}
             >

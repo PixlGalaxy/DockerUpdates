@@ -120,7 +120,7 @@ export function Meter({ value, tone }: { value: number; tone: 'cpu' | 'mem' }) {
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2 ring-1 ring-line/60 ring-inset">
       <div
-        className={`h-full rounded-full transition-[width] duration-500 ${color}`}
+        className={`h-full rounded-full transition-[width] duration-700 ease-out ${color}`}
         style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%` }}
       />
     </div>

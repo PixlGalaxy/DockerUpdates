@@ -11,3 +11,4 @@ Dockerfile
 *.log
 Readme.txt
 README.md
+backend/data

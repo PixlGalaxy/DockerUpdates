@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, UnauthorizedError } from './api'
-import AddContainerModal from './components/AddContainerModal'
+import ContainerFormModal from './components/ContainerFormModal'
 import ContainerTable from './components/ContainerTable'
 import Footer from './components/Footer'
 import Header from './components/Header'
@@ -10,9 +10,20 @@ import StatsCards, { type Filter } from './components/StatsCards'
 import Toasts, { type Toast, type ToastTone } from './components/Toasts'
 import Toolbar from './components/Toolbar'
 import { useStoredState, useTheme } from './hooks'
-import type { ContainerAction, ContainerInfo } from './types'
+import type {
+  BulkSummary,
+  CheckResult,
+  CheckSummary,
+  ContainerAction,
+  ContainerInfo,
+  ContainerSpec,
+  UpdateAllSummary,
+  UpdateResult,
+} from './types'
 
 const POLL_MS = 10_000
+/** CPU / RAM refresh rate */
+const STATS_TICK_MS = 1000
 
 const ACTION_DONE: Record<ContainerAction, string> = {
   start: 'started',
@@ -65,6 +76,8 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [selfUpdating, setSelfUpdating] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; spec: ContainerSpec } | null>(null)
   const toastId = useRef(0)
 
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
@@ -114,11 +127,39 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
     return () => clearInterval(timer)
   }, [load])
 
-  async function withBusy(id: string, fn: () => Promise<unknown>, success?: string) {
+  /** `report` is a success message, or a callback that turns the result into toasts. */
+  // Live CPU / RAM: lightweight endpoint served from cached docker stats streams
+  useEffect(() => {
+    let inFlight = false
+    const tick = async () => {
+      if (inFlight || document.visibilityState !== 'visible') return
+      inFlight = true
+      try {
+        const live = await api.stats()
+        setContainers((cs) =>
+          cs.map((c) => {
+            const s = live[c.id]
+            if (s) return { ...c, ...s }
+            // Not running anymore: zero the meters until the next full refresh
+            return c.state === 'running' ? c : { ...c, cpuPercent: 0, memUsage: 0 }
+          }),
+        )
+      } catch (err) {
+        if (err instanceof UnauthorizedError) onSignedOut()
+      } finally {
+        inFlight = false
+      }
+    }
+    const timer = setInterval(tick, STATS_TICK_MS)
+    return () => clearInterval(timer)
+  }, [onSignedOut])
+
+  async function withBusy<T>(id: string, fn: () => Promise<T>, report?: string | ((r: T) => void)) {
     setBusyIds((s) => new Set(s).add(id))
     try {
-      await fn()
-      if (success) toast('success', success)
+      const result = await fn()
+      if (typeof report === 'function') report(result)
+      else if (report) toast('success', report)
     } catch (err) {
       handleError(err)
     } finally {
@@ -131,11 +172,10 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
     }
   }
 
-  async function withGlobal(key: string, fn: () => Promise<unknown>, success: string) {
+  async function withGlobal<T>(key: string, fn: () => Promise<T>, report: (r: T) => void) {
     setGlobalBusy(key)
     try {
-      await fn()
-      toast('success', success)
+      report(await fn())
     } catch (err) {
       handleError(err)
     } finally {
@@ -145,6 +185,63 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
   }
 
   const nameOf = (id: string) => containers.find((c) => c.id === id)?.name ?? 'Container'
+
+  /** DockerUpdates is being recreated by its helper container: wait for it to come back, then reload. */
+  async function waitForSelfUpdate() {
+    setSelfUpdating(true)
+    const before = await api.version().then((r) => r.version).catch(() => null)
+    const deadline = Date.now() + 3 * 60_000
+    let wentDown = false
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const { version } = await api.version()
+        if (wentDown || (before && version !== before)) {
+          window.location.reload()
+          return
+        }
+      } catch {
+        wentDown = true
+      }
+    }
+    setSelfUpdating(false)
+    toast('error', 'DockerUpdates did not come back after updating. Check "docker ps -a" on the host.')
+  }
+
+  async function openEditor(id: string) {
+    await withBusy(id, async () => setEditing({ id, spec: await api.spec(id) }))
+  }
+
+  function reportCheck(r: CheckResult) {
+    if (r.status === 'up-to-date') toast('success', `${r.name} is up to date`)
+    else if (r.status === 'update-available') toast('info', `Update available for ${r.name}`)
+    else toast('error', r.message ?? `Could not check ${r.name}`)
+  }
+
+  function reportCheckAll(s: CheckSummary) {
+    const parts = [`${s.available} update${s.available === 1 ? '' : 's'} available`, `${s.upToDate} up to date`]
+    if (s.authRequired) parts.push(`${s.authRequired} need registry login`)
+    if (s.local) parts.push(`${s.local} local`)
+    if (s.failed) parts.push(`${s.failed} failed`)
+    toast(s.authRequired || s.failed ? 'info' : 'success', `Check finished: ${parts.join(', ')}`)
+  }
+
+  function reportUpdate(r: UpdateResult) {
+    if (r.selfUpdate) void waitForSelfUpdate()
+    else toast('success', `${r.name} updated`)
+  }
+
+  function reportUpdateAll(s: UpdateAllSummary) {
+    if (s.updated) toast('success', `${s.updated} container${s.updated === 1 ? '' : 's'} updated`)
+    for (const f of s.failed) toast('error', `${f.name}: ${f.error}`)
+    if (!s.updated && !s.failed.length && !s.selfUpdate) toast('info', 'Nothing to update')
+    if (s.selfUpdate) void waitForSelfUpdate()
+  }
+
+  function reportBulk(action: ContainerAction, s: BulkSummary) {
+    const n = `${s.affected} container${s.affected === 1 ? '' : 's'}`
+    toast(s.failed ? 'error' : 'success', `${n} ${ACTION_DONE[action]}${s.failed ? `, ${s.failed} failed` : ''}`)
+  }
 
   const stats = useMemo(() => {
     const running = containers.filter((c) => c.state === 'running').length
@@ -207,9 +304,9 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
           onAdvanced={setAdvanced}
           busy={globalBusy}
           updates={stats.updates}
-          onBulk={(a) => withGlobal(a, () => api.bulk(a), `All containers ${ACTION_DONE[a]}`)}
-          onCheckUpdates={() => withGlobal('check', api.checkAllUpdates, 'Update check finished')}
-          onUpdateAll={() => withGlobal('update', api.updateAll, 'All containers updated')}
+          onBulk={(a) => withGlobal(a, () => api.bulk(a), (s) => reportBulk(a, s))}
+          onCheckUpdates={() => withGlobal('check', api.checkAllUpdates, reportCheckAll)}
+          onUpdateAll={() => withGlobal('update', api.updateAll, reportUpdateAll)}
         />
 
         <ContainerTable
@@ -224,28 +321,66 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
           onAutostart={(id, enabled) =>
             withBusy(id, () => api.setAutostart(id, enabled), `Autostart ${enabled ? 'enabled' : 'disabled'} for ${nameOf(id)}`)
           }
-          onCheckUpdate={(id) => withBusy(id, () => api.checkUpdate(id))}
-          onUpdate={(id) => withBusy(id, () => api.update(id), `${nameOf(id)} updated`)}
+          onCheckUpdate={(id) => withBusy(id, () => api.checkUpdate(id), reportCheck)}
+          onUpdate={(id) => withBusy(id, () => api.update(id), reportUpdate)}
           onCopy={copy}
+          onEdit={openEditor}
         />
       </main>
 
       <Footer />
 
       {showAdd && (
-        <AddContainerModal
+        <ContainerFormModal
+          mode="add"
           onClose={() => setShowAdd(false)}
-          onSubmit={async (data) => {
+          onSubmit={async (spec) => {
             try {
-              await api.create(data)
+              await api.create(spec)
             } catch (err) {
               if (err instanceof UnauthorizedError) onSignedOut()
               throw err
             }
-            toast('success', `${data.name} created`)
+            toast('success', `${spec.name} created`)
             await refresh()
           }}
         />
+      )}
+
+      {editing && (
+        <ContainerFormModal
+          mode="edit"
+          initial={editing.spec}
+          onClose={() => setEditing(null)}
+          onSubmit={async (spec) => {
+            const { id } = editing
+            setBusyIds((s) => new Set(s).add(id))
+            try {
+              const r = await api.edit(id, spec)
+              toast('success', `${r.name} updated with the new settings`)
+            } catch (err) {
+              if (err instanceof UnauthorizedError) onSignedOut()
+              throw err
+            } finally {
+              setBusyIds((s) => {
+                const next = new Set(s)
+                next.delete(id)
+                return next
+              })
+              await refresh()
+            }
+          }}
+        />
+      )}
+
+      {selfUpdating && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-[fade-in_.15s_ease-out]">
+          <div className="flex max-w-sm flex-col items-center rounded-2xl border border-line bg-surface p-8 text-center shadow-2xl">
+            <LoaderCircle size={32} className="animate-spin text-sky-500" />
+            <h2 className="mt-4 font-semibold">Updating DockerUpdates…</h2>
+            <p className="mt-1 text-sm text-muted">The app is restarting with the new image. This page will reload automatically.</p>
+          </div>
+        </div>
       )}
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
