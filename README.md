@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/image-ghcr.io%2Fpixlgalaxy%2Fdockerupdates-2496ED?logo=docker&logoColor=white" alt="Image" />
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/home.webp" alt="DockerUpdates dashboard: containers with health status, updates available, live CPU and memory" width="100%" />
+</p>
+
 ---
 
 ## Features
@@ -34,6 +38,31 @@
 - **Icons**: custom icon URL per image, Unraid icon label, or the app's favicon discovered automatically
 - **Secure by default**: login, revocable sessions, brute-force lockout, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
 - Light / dark theme, search and filters, Linux and Windows (Docker Desktop) hosts
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/context-menu.webp" alt="Container actions on right-click" /><p align="center"><b>Right-click actions</b><br />Console, logs, edit, update, history and more</p></td>
+    <td width="50%"><img src="docs/screenshots/update-log-finished.webp" alt="Live update log" /><p align="center"><b>Live update log</b><br />Pull progress, the docker run command and cleanup, Unraid style</p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/auto-update.webp" alt="Auto-update schedule" /><p align="center"><b>Automatic updates</b><br />Global schedule, cooldown and "update" or "notify only"</p></td>
+    <td><img src="docs/screenshots/auto-update-containers.webp" alt="Per-container auto-update" /><p align="center"><b>Per container</b><br />Global, custom time or off for every container</p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/edit.webp" alt="Container editor" /><p align="center"><b>Unraid-style editor</b><br />Memory slider, fixed IP check, ports, volumes and extra parameters</p></td>
+    <td><img src="docs/screenshots/settings.webp" alt="Notification settings" /><p align="center"><b>Notifications</b><br />Discord embeds, Telegram, ntfy and signed webhooks</p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/logs.webp" alt="Live logs" /><p align="center"><b>Live logs</b><br />Follow, filter, timestamps and download</p></td>
+    <td><img src="docs/screenshots/console.webp" alt="Container console" /><p align="center"><b>Console</b><br />Interactive shell inside any running container</p></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/history.webp" alt="Update history" /><p align="center"><b>Update history</b><br />Every update with the exact version change</p></td>
+    <td><img src="docs/screenshots/home-dark.webp" alt="Dark theme" /><p align="center"><b>Dark theme</b><br />Light and dark, with host CPU and RAM in the header</p></td>
+  </tr>
+</table>
 
 ## Quick start
 
