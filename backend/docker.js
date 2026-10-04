@@ -84,6 +84,20 @@ export function hostIp() {
   return 'localhost';
 }
 
+// Hostname of the Docker host (inside a container os.hostname() is the container ID).
+let hostNameCache = { value: null, at: 0 };
+
+export async function hostName() {
+  if (process.env.HOST_NAME) return process.env.HOST_NAME;
+  if (hostNameCache.value && Date.now() - hostNameCache.at < 10 * 60_000) return hostNameCache.value;
+  try {
+    hostNameCache = { value: (await docker.info()).Name, at: Date.now() };
+  } catch {
+    // keep the previous value if the daemon is unreachable
+  }
+  return hostNameCache.value ?? os.hostname();
+}
+
 async function stats(id) {
   const cached = cachedStats(id);
   if (cached) return cached;
@@ -135,6 +149,9 @@ export async function listContainers() {
         createdAt: inspect.Created,
         updateStatus: isLocalImageRef(inspect.Config.Image) ? 'local' : update?.status ?? 'unknown',
         updateMessage: update?.message,
+        updateFrom: update?.from,
+        updateTo: update?.to,
+        updateKind: update?.kind,
         isSelf: info.Id === self,
         // Limits configured on the container (0 = no limit, falls back to host RAM in stats)
         memLimitConfigured: inspect.HostConfig.Memory || 0,
@@ -250,13 +267,38 @@ export async function checkUpdate(id) {
     try {
       await pull(image);
       const latest = await docker.getImage(image).inspect();
-      result = { status: latest.Id === inspect.Image ? 'up-to-date' : 'update-available' };
+      if (latest.Id === inspect.Image) {
+        result = { status: 'up-to-date' };
+      } else {
+        const current = await docker.getImage(inspect.Image).inspect().catch(() => ({ Id: inspect.Image }));
+        result = { status: 'update-available', ...versionChange(current, latest) };
+      }
     } catch (err) {
       result = { status: err.auth ? 'auth-required' : 'error', message: err.message };
     }
   }
   updateStatus.set(name, result);
   return { name, ...result };
+}
+
+const LABEL_VERSION = 'org.opencontainers.image.version';
+const LABEL_REVISION = 'org.opencontainers.image.revision';
+
+/**
+ * Human-readable "from -> to" for an update. Uses the image version label when both images
+ * have a distinct one (e.g. 1.2.3 -> 1.3.0), else the git revision (commit SHA, set by
+ * docker/metadata-action), else the short image ID.
+ */
+function versionChange(current, latest) {
+  const label = (img, key) => img.Config?.Labels?.[key];
+  const v1 = label(current, LABEL_VERSION);
+  const v2 = label(latest, LABEL_VERSION);
+  if (v1 && v2 && v1 !== v2 && !/^(latest|main|master)$/.test(v2)) return { from: v1, to: v2, kind: 'version' };
+  const r1 = label(current, LABEL_REVISION);
+  const r2 = label(latest, LABEL_REVISION);
+  if (r1 && r2 && r1 !== r2) return { from: r1.slice(0, 7), to: r2.slice(0, 7), kind: 'revision' };
+  const id = (img) => img.Id.replace(/^sha256:/, '').slice(0, 12);
+  return { from: id(current), to: id(latest), kind: 'image' };
 }
 
 export async function checkAllUpdates() {

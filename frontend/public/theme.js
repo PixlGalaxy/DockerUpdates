@@ -3,7 +3,9 @@
   var stored = null
   try {
     stored = JSON.parse(localStorage.getItem('du:theme'))
-  } catch (e) {}
+  } catch {
+    // storage unavailable
+  }
   var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
   if (dark) document.documentElement.classList.add('dark')
 })()

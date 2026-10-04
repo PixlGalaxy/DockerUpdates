@@ -57,6 +57,7 @@ app.get('/api/auth/me', auth.me);
 
 app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
+  hostName: await dk.hostName(),
   containers: await dk.listContainers(),
 })));
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));

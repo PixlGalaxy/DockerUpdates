@@ -99,7 +99,8 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `SESSION_HOURS` | | `12` | Maximum session lifetime |
 | `SESSION_IDLE_MINUTES` | | `120` | Sign out after this much inactivity |
 | `PORT` | | `3000` | HTTP port inside the container |
-| `HOST_IP` | | auto | IP shown in the *LAN IP:Port* links. Set it when running in Docker |
+| `HOST_IP` | | auto | IP shown in the header and the *LAN IP:Port* links. Set it when running in Docker |
+| `HOST_NAME` | | Docker host name | Server name shown in the header |
 | `REGISTRY_AUTH` | | | Registry credentials, e.g. `ghcr.io=user:token,docker.io=user:token` |
 | `TRUST_PROXY` | | private networks | IP of your reverse proxy (trusted for `X-Forwarded-*`) |
 | `COOKIE_SECURE` | | `false` | `true` to always send the session cookie over HTTPS only |

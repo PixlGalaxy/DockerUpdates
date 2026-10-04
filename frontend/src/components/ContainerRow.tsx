@@ -80,34 +80,36 @@ export default function ContainerRow({
       {/* Application */}
       <td className={td}>
         <div className="flex items-center gap-3">
-          {c.icon && !iconFailed ? (
-            <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm">
-              <img
-                src={c.icon}
-                alt=""
-                loading="lazy"
-                className="size-full object-contain"
-                onError={() => setIconFailed(true)}
-              />
-            </div>
-          ) : (
-            <div
-              className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm ${gradientFor(c.name)}`}
-            >
-              {c.name.slice(0, 2)}
-            </div>
-          )}
+          <div className="relative shrink-0">
+            {c.icon && !iconFailed ? (
+              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm">
+                <img
+                  src={c.icon}
+                  alt=""
+                  loading="lazy"
+                  className="size-full object-contain"
+                  onError={() => setIconFailed(true)}
+                />
+              </div>
+            ) : (
+              <div
+                className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm ${gradientFor(c.name)}`}
+              >
+                {c.name.slice(0, 2)}
+              </div>
+            )}
+            {c.isSelf && (
+              <span
+                title="This is DockerUpdates itself: it is never stopped, paused or removed by bulk actions"
+                className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm ring-2 ring-surface"
+              >
+                <ShieldCheck size={11} />
+              </span>
+            )}
+          </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="truncate font-semibold">{c.name}</span>
-              {c.isSelf && (
-                <span
-                  title="DockerUpdates itself: it is never stopped, paused or removed by bulk actions"
-                  className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-600 uppercase dark:text-sky-400"
-                >
-                  <ShieldCheck size={11} /> This app
-                </span>
-              )}
               <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${state.text}`}>
                 <span className="relative flex size-2">
                   {state.pulse && (
@@ -176,7 +178,22 @@ export default function ContainerRow({
             </span>
           )}
           <div className="flex items-center gap-1">
-            <Chip>{tag}</Chip>
+            {c.updateStatus === 'update-available' && c.updateFrom && c.updateTo ? (
+              <Chip
+                className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              >
+                <span
+                  title={`${tag}: ${c.updateKind === 'version' ? 'version' : c.updateKind === 'revision' ? 'commit' : 'image ID'} ${c.updateFrom} → ${c.updateTo}`}
+                  className="inline-flex items-center gap-1"
+                >
+                  <span className="opacity-70">{c.updateFrom}</span>
+                  <span aria-hidden>→</span>
+                  <span className="font-semibold">{c.updateTo}</span>
+                </span>
+              </Chip>
+            ) : (
+              <Chip>{tag}</Chip>
+            )}
             <IconButton
               label="Check for update"
               className="size-6"

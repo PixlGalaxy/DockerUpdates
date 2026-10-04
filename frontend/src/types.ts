@@ -45,6 +45,10 @@ export interface ContainerInfo {
   updateStatus: UpdateStatus
   /** Explanation for auth-required / error / local */
   updateMessage?: string
+  /** When an update is available: current -> new (version, commit SHA or image ID) */
+  updateFrom?: string
+  updateTo?: string
+  updateKind?: 'version' | 'revision' | 'image'
   /** This is DockerUpdates' own container */
   isSelf: boolean
   /** Memory limit set on the container (0 = no limit) */
@@ -93,6 +97,8 @@ export interface ContainerStats {
 
 export interface ContainersResponse {
   hostIp: string
+  /** Hostname of the Docker host */
+  hostName: string
   containers: ContainerInfo[]
 }
 

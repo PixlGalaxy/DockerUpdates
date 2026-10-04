@@ -5,6 +5,7 @@ import { Button, IconButton } from './ui'
 
 interface Props {
   hostIp: string
+  hostName: string
   user: string
   lastUpdated: Date | null
   refreshing: boolean
@@ -17,6 +18,7 @@ interface Props {
 
 export default function Header({
   hostIp,
+  hostName,
   user,
   lastUpdated,
   refreshing,
@@ -33,9 +35,12 @@ export default function Header({
           <Logo size={38} />
           <div className="leading-tight">
             <h1 className="text-base font-semibold tracking-tight">DockerUpdates</h1>
-            {hostIp && (
-              <p className="flex items-center gap-1 text-xs text-muted">
-                <Server size={11} /> {hostIp}
+            {(hostIp || hostName) && (
+              <p className="flex items-center gap-1.5 text-xs text-muted" title="Docker host">
+                <Server size={11} className="shrink-0" />
+                {hostIp && <span className="font-mono">{hostIp}</span>}
+                {hostIp && hostName && <span aria-hidden className="text-muted/50">|</span>}
+                {hostName && <span className="max-w-[40vw] truncate font-medium text-fg/80">{hostName}</span>}
               </p>
             )}
           </div>

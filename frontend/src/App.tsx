@@ -67,6 +67,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
   const [advanced, setAdvanced] = useStoredState('du:advanced', true)
   const [containers, setContainers] = useState<ContainerInfo[]>([])
   const [hostIp, setHostIp] = useState('')
+  const [hostName, setHostName] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -103,6 +104,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
       const data = await api.list()
       setContainers(data.containers)
       setHostIp(data.hostIp)
+      setHostName(data.hostName)
       setLastUpdated(new Date())
     } catch (err) {
       handleError(err)
@@ -284,6 +286,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
     <div className="flex min-h-screen flex-col">
       <Header
         hostIp={hostIp}
+        hostName={hostName}
         user={user}
         lastUpdated={lastUpdated}
         refreshing={refreshing}
