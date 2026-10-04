@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
 import LanNetworkCard from '../components/LanNetworkCard'
+import SupportCard from '../components/SupportCard'
 import ScheduleEditor from '../components/ScheduleEditor'
 import { selectCls } from '../schedule'
 import type { ToastTone } from '../components/Toasts'
@@ -303,6 +304,8 @@ export default function SettingsPage({ toast, onError }: Props) {
           )}
         </div>
       </Card>
+
+      <SupportCard />
 
       {dirty && (
         <div className="sticky bottom-4 z-20 flex items-center justify-between gap-3 rounded-2xl border border-sky-500/30 bg-surface/95 px-4 py-3 shadow-xl backdrop-blur">
