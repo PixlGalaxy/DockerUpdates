@@ -42,7 +42,11 @@ export default function Header({ hostIp, hostName, user, page, theme, usage, onN
           </div>
         </button>
 
-        <nav className="flex h-full items-stretch gap-1">
+        <div className="hidden h-8 w-px bg-line lg:block" />
+        <HostMeters usage={usage} />
+
+        {/* Navigation pushed to the right, next to theme / user / sign out */}
+        <nav className="ml-auto flex h-full items-stretch gap-1">
           {NAV.map(({ page: p, label, icon: Icon }) => {
             const active = p === page
             return (
@@ -63,9 +67,8 @@ export default function Header({ hostIp, hostName, user, page, theme, usage, onN
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <HostMeters usage={usage} />
-          <div className="mx-1 hidden h-6 w-px bg-line lg:block" />
+        <div className="flex items-center gap-1 sm:gap-2">
+          <div className="mr-1 hidden h-6 w-px bg-line sm:block" />
           <IconButton
             label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={onToggleTheme}
