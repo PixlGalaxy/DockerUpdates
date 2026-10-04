@@ -6,6 +6,7 @@ import {
   CircleDashed,
   CloudDownload,
   Copy,
+  EllipsisVertical,
   HardDrive,
   LoaderCircle,
   LockKeyhole,
@@ -13,7 +14,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { ContainerInfo, VolumeMapping } from '../types'
 import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
@@ -103,13 +104,8 @@ export default function ContainerRow({
   onUpdate,
   onCopy,
 }: Props) {
-  const [iconFailed, setIconFailed] = useState(false)
   const active = isActive(c)
-  const state = STATE[c.state] ?? STATE.exited
-  const { repo, tag } = splitImage(c.image)
-  // Prefer the limit configured on the container; otherwise Docker reports the host RAM
-  const memLimit = c.memLimitConfigured || c.memLimit
-  const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
+  const { repo } = splitImage(c.image)
   const hostNet = c.network === 'host'
   const published = c.ports.filter((p) => p.hostPort)
 
@@ -131,52 +127,13 @@ export default function ContainerRow({
       {/* Application */}
       <td className={td}>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={openMenuHere}
-            title="Actions (or right-click the row)"
-            className="relative shrink-0 rounded-xl focus-visible:outline-2 focus-visible:outline-sky-500"
-          >
-            {c.icon && !iconFailed ? (
-              <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm transition-transform group-hover:scale-105">
-                <img
-                  src={c.icon}
-                  alt=""
-                  loading="lazy"
-                  className="size-full object-contain"
-                  onError={() => setIconFailed(true)}
-                />
-              </div>
-            ) : (
-              <div
-                className={`flex size-10 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm transition-transform group-hover:scale-105 ${gradientFor(c.name)}`}
-              >
-                {c.name.slice(0, 2)}
-              </div>
-            )}
-            {c.isSelf && (
-              <span
-                title="This is DockerUpdates itself: it is never stopped, paused or removed by bulk actions"
-                className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm ring-2 ring-surface"
-              >
-                <ShieldCheck size={11} />
-              </span>
-            )}
-          </button>
+          <AppIcon container={c} onClick={openMenuHere} />
           <div className="max-w-60 min-w-0">
             <div className="flex items-center gap-2">
               <button type="button" onClick={openMenuHere} className="truncate text-left font-semibold hover:text-sky-600 dark:hover:text-sky-400">
                 {c.name}
               </button>
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${state.text}`}>
-                <span className="relative flex size-2">
-                  {state.pulse && (
-                    <span className={`absolute inline-flex size-full animate-ping rounded-full opacity-60 ${state.dot}`} />
-                  )}
-                  <span className={`relative inline-flex size-2 rounded-full ${state.dot}`} />
-                </span>
-                {state.label}
-              </span>
+              <StateLabel container={c} />
             </div>
             <div className="mt-0.5 truncate text-xs text-muted" title={c.image}>
               {repo}
@@ -197,65 +154,7 @@ export default function ContainerRow({
 
       {/* Version */}
       <td className={td}>
-        <div className="flex flex-col items-start gap-1.5">
-          {busy ? (
-            <span className={`${badge} bg-sky-500/10 text-sky-600 dark:text-sky-400`}>
-              <LoaderCircle size={12} className="animate-spin" /> Working…
-            </span>
-          ) : c.updateStatus === 'up-to-date' ? (
-            <span className={`${badge} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
-              <CircleCheck size={12} /> Up to date
-            </span>
-          ) : c.updateStatus === 'update-available' ? (
-            <Button variant="update" size="xs" icon={<CloudDownload size={13} />} onClick={onUpdate}>
-              Update available
-            </Button>
-          ) : c.updateStatus === 'auth-required' ? (
-            <span title={c.updateMessage} className={`${badge} cursor-help bg-red-500/10 text-red-600 dark:text-red-400`}>
-              <LockKeyhole size={12} /> Auth required
-            </span>
-          ) : c.updateStatus === 'local' ? (
-            <span
-              title={c.updateMessage ?? 'Local image ID, there is no registry to check'}
-              className={`${badge} cursor-help bg-zinc-500/10 text-muted`}
-            >
-              <HardDrive size={12} /> Local image
-            </span>
-          ) : c.updateStatus === 'error' ? (
-            <span title={c.updateMessage} className={`${badge} cursor-help bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
-              <TriangleAlert size={12} /> Check failed
-            </span>
-          ) : (
-            <span className={`${badge} bg-zinc-500/10 text-muted`}>
-              <CircleDashed size={12} /> Not checked
-            </span>
-          )}
-          <div className="flex items-center gap-1">
-            {c.updateStatus === 'update-available' && c.updateFrom && c.updateTo ? (
-              <Chip className="border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300">
-                <span
-                  title={`${tag}: ${c.updateKind === 'version' ? 'version' : c.updateKind === 'revision' ? 'commit' : 'image ID'} ${c.updateFrom} → ${c.updateTo}`}
-                  className="inline-flex items-center gap-1"
-                >
-                  {/* Image IDs are shown short like git commits; the tooltip has the full value */}
-                  <span className="opacity-70">{c.updateKind === 'image' ? c.updateFrom.slice(0, 7) : c.updateFrom}</span>
-                  <span aria-hidden>→</span>
-                  <span className="font-semibold">{c.updateKind === 'image' ? c.updateTo.slice(0, 7) : c.updateTo}</span>
-                </span>
-              </Chip>
-            ) : (
-              <Chip>{tag}</Chip>
-            )}
-            <IconButton
-              label="Check for update"
-              className="size-6"
-              disabled={busy || c.updateStatus === 'local'}
-              onClick={onCheckUpdate}
-            >
-              <RefreshCw size={12} />
-            </IconButton>
-          </div>
-        </div>
+        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} />
       </td>
 
       {advanced && (
@@ -326,48 +225,7 @@ export default function ContainerRow({
 
       {/* Resources */}
       <td className={`${td} w-44 min-w-44`}>
-        {c.state === 'running' ? (
-          <div className="space-y-2 text-[11px] whitespace-nowrap">
-            <div>
-              <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="text-muted">
-                  CPU
-                  {c.cpuLimit > 0 && (
-                    <span className="ml-1 text-[10px] text-muted/80" title="CPU limit configured on the container">
-                      max {c.cpuLimit}
-                    </span>
-                  )}
-                </span>
-                <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
-              </div>
-              <Meter value={c.cpuPercent} tone="cpu" />
-            </div>
-            <div>
-              <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="text-muted">RAM</span>
-                <span className="tabular-nums">
-                  <span className="font-medium">{formatBytes(c.memUsage)}</span>
-                  {c.memLimitConfigured > 0 ? (
-                    <span className="text-muted" title="Memory limit configured on the container">
-                      {' / '}
-                      {formatBytes(c.memLimitConfigured)}
-                    </span>
-                  ) : (
-                    <span
-                      className="text-muted"
-                      title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one in Edit.`}
-                    >
-                      {' / ∞'}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <Meter value={memPct} tone="mem" />
-            </div>
-          </div>
-        ) : (
-          <span className="text-xs text-muted">—</span>
-        )}
+        <Resources container={c} />
       </td>
 
       {/* Autostart */}
@@ -381,6 +239,328 @@ export default function ContainerRow({
         <div className="mt-0.5 text-muted">Created {timeAgo(c.createdAt)} ago</div>
       </td>
     </tr>
+  )
+}
+
+/** Phone layout: the same information as a table row, stacked in a card. */
+export function ContainerCard({
+  container: c,
+  hostIp,
+  advanced,
+  busy,
+  onMenu,
+  onAutostart,
+  onCheckUpdate,
+  onUpdate,
+  onCopy,
+}: Props) {
+  const active = isActive(c)
+  const { repo } = splitImage(c.image)
+  const hostNet = c.network === 'host'
+  const published = c.ports.filter((p) => p.hostPort)
+  const internal = c.ports.filter((p) => !p.hostPort)
+
+  const openMenuHere = (e: MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    onMenu(r.right - 224, r.bottom + 4)
+  }
+
+  return (
+    <article
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest('a, input, textarea')) return
+        e.preventDefault()
+        onMenu(e.clientX, e.clientY)
+      }}
+      className={`group overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${busy ? 'opacity-70' : ''}`}
+    >
+      <div className="flex items-start gap-3 p-4 pb-3">
+        <AppIcon container={c} onClick={openMenuHere} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={openMenuHere} className="min-w-0 truncate text-left font-semibold">
+              {c.name}
+            </button>
+            <StateLabel container={c} />
+          </div>
+          <div className="mt-0.5 truncate text-xs text-muted" title={c.image}>
+            {repo}
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy(c.id)}
+            title="Copy container ID"
+            className="mt-0.5 inline-flex items-center gap-1 font-mono text-[11px] text-muted/80"
+          >
+            {c.id.slice(0, 12)}
+            <Copy size={11} />
+          </button>
+          <HealthTag container={c} />
+        </div>
+        <IconButton label="Actions" className="-mt-1 -mr-1 size-9 shrink-0" onClick={openMenuHere}>
+          <EllipsisVertical size={18} />
+        </IconButton>
+      </div>
+
+      <div className="space-y-3 px-4 pb-4">
+        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} inline />
+
+        {(hostNet || c.ports.length > 0) && (
+          <CardField label="Ports">
+            {hostNet ? (
+              <span className="font-mono text-xs">
+                <span className="text-muted">host network · </span>
+                {hostIp}
+              </span>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {published.map((p) =>
+                  p.protocol === 'tcp' ? (
+                    <a
+                      key={`${p.hostPort}/${p.protocol}`}
+                      href={`http://${hostIp}:${p.hostPort}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-0.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[11px] text-sky-700 dark:text-sky-300"
+                      title={`Container port ${p.containerPort}/${p.protocol}`}
+                    >
+                      :{p.hostPort}
+                      <ArrowUpRight size={11} />
+                    </a>
+                  ) : (
+                    <Chip key={`${p.hostPort}/${p.protocol}`}>
+                      :{p.hostPort}/{p.protocol}
+                    </Chip>
+                  ),
+                )}
+                {internal.map((p) => (
+                  <Chip key={`${p.containerPort}/${p.protocol}`} className="opacity-70">
+                    {p.containerPort}/{p.protocol} (internal)
+                  </Chip>
+                ))}
+              </div>
+            )}
+          </CardField>
+        )}
+
+        {advanced && (
+          <CardField label="Network">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px]">
+              <Chip className="font-sans text-xs">{c.network}</Chip>
+              <span>{c.ip || (hostNet ? hostIp : <span className="text-muted">—</span>)}</span>
+              {c.mac && <span className="text-muted">{c.mac}</span>}
+            </div>
+          </CardField>
+        )}
+
+        {advanced && c.volumes.length > 0 && (
+          <CardField label="Volumes">
+            <VolumeList volumes={c.volumes} />
+          </CardField>
+        )}
+
+        {c.state === 'running' && <Resources container={c} wide />}
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-line bg-surface-2/40 px-4 py-2.5 text-xs">
+        <div className="min-w-0 flex-1">
+          <span className="font-medium">{active && c.startedAt ? `Up ${timeAgo(c.startedAt)}` : 'Not running'}</span>
+          <span className="text-muted"> · created {timeAgo(c.createdAt)} ago</span>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-muted">
+          Autostart
+          <Toggle label="Autostart" checked={c.autostart} disabled={busy} onChange={onAutostart} />
+        </label>
+      </div>
+    </article>
+  )
+}
+
+function CardField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold tracking-wider text-muted uppercase">{label}</div>
+      {children}
+    </div>
+  )
+}
+
+/** App icon (or initials) that opens the container menu; shield badge on DockerUpdates itself. */
+function AppIcon({ container: c, onClick }: { container: ContainerInfo; onClick: (e: MouseEvent<HTMLElement>) => void }) {
+  const [iconFailed, setIconFailed] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Actions (or right-click the row)"
+      className="relative shrink-0 rounded-xl focus-visible:outline-2 focus-visible:outline-sky-500"
+    >
+      {c.icon && !iconFailed ? (
+        <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm transition-transform group-hover:scale-105">
+          <img
+            src={c.icon}
+            alt=""
+            loading="lazy"
+            className="size-full object-contain"
+            onError={() => setIconFailed(true)}
+          />
+        </div>
+      ) : (
+        <div
+          className={`flex size-10 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm transition-transform group-hover:scale-105 ${gradientFor(c.name)}`}
+        >
+          {c.name.slice(0, 2)}
+        </div>
+      )}
+      {c.isSelf && (
+        <span
+          title="This is DockerUpdates itself: it is never stopped, paused or removed by bulk actions"
+          className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm ring-2 ring-surface"
+        >
+          <ShieldCheck size={11} />
+        </span>
+      )}
+    </button>
+  )
+}
+
+function StateLabel({ container: c }: { container: ContainerInfo }) {
+  const state = STATE[c.state] ?? STATE.exited
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${state.text}`}>
+      <span className="relative flex size-2">
+        {state.pulse && <span className={`absolute inline-flex size-full animate-ping rounded-full opacity-60 ${state.dot}`} />}
+        <span className={`relative inline-flex size-2 rounded-full ${state.dot}`} />
+      </span>
+      {state.label}
+    </span>
+  )
+}
+
+/** Update status badge, current tag (or from → to) and the check button. */
+function UpdateInfo({
+  container: c,
+  busy,
+  onUpdate,
+  onCheckUpdate,
+  inline,
+}: {
+  container: ContainerInfo
+  busy: boolean
+  onUpdate: () => void
+  onCheckUpdate: () => void
+  /** Badge and tag side by side (mobile card) instead of stacked */
+  inline?: boolean
+}) {
+  const { tag } = splitImage(c.image)
+  return (
+    <div className={inline ? 'flex flex-wrap items-center gap-1.5' : 'flex flex-col items-start gap-1.5'}>
+      {busy ? (
+        <span className={`${badge} bg-sky-500/10 text-sky-600 dark:text-sky-400`}>
+          <LoaderCircle size={12} className="animate-spin" /> Working…
+        </span>
+      ) : c.updateStatus === 'up-to-date' ? (
+        <span className={`${badge} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
+          <CircleCheck size={12} /> Up to date
+        </span>
+      ) : c.updateStatus === 'update-available' ? (
+        <Button variant="update" size="xs" icon={<CloudDownload size={13} />} onClick={onUpdate}>
+          Update available
+        </Button>
+      ) : c.updateStatus === 'auth-required' ? (
+        <span title={c.updateMessage} className={`${badge} cursor-help bg-red-500/10 text-red-600 dark:text-red-400`}>
+          <LockKeyhole size={12} /> Auth required
+        </span>
+      ) : c.updateStatus === 'local' ? (
+        <span
+          title={c.updateMessage ?? 'Local image ID, there is no registry to check'}
+          className={`${badge} cursor-help bg-zinc-500/10 text-muted`}
+        >
+          <HardDrive size={12} /> Local image
+        </span>
+      ) : c.updateStatus === 'error' ? (
+        <span title={c.updateMessage} className={`${badge} cursor-help bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
+          <TriangleAlert size={12} /> Check failed
+        </span>
+      ) : (
+        <span className={`${badge} bg-zinc-500/10 text-muted`}>
+          <CircleDashed size={12} /> Not checked
+        </span>
+      )}
+      <div className="flex items-center gap-1">
+        {c.updateStatus === 'update-available' && c.updateFrom && c.updateTo ? (
+          <Chip className="border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300">
+            <span
+              title={`${tag}: ${c.updateKind === 'version' ? 'version' : c.updateKind === 'revision' ? 'commit' : 'image ID'} ${c.updateFrom} → ${c.updateTo}`}
+              className="inline-flex items-center gap-1"
+            >
+              {/* Image IDs are shown short like git commits; the tooltip has the full value */}
+              <span className="opacity-70">{c.updateKind === 'image' ? c.updateFrom.slice(0, 7) : c.updateFrom}</span>
+              <span aria-hidden>→</span>
+              <span className="font-semibold">{c.updateKind === 'image' ? c.updateTo.slice(0, 7) : c.updateTo}</span>
+            </span>
+          </Chip>
+        ) : (
+          <Chip>{tag}</Chip>
+        )}
+        <IconButton
+          label="Check for update"
+          className="size-6"
+          disabled={busy || c.updateStatus === 'local'}
+          onClick={onCheckUpdate}
+        >
+          <RefreshCw size={12} />
+        </IconButton>
+      </div>
+    </div>
+  )
+}
+
+function Resources({ container: c, wide }: { container: ContainerInfo; wide?: boolean }) {
+  // Prefer the limit configured on the container; otherwise Docker reports the host RAM
+  const memLimit = c.memLimitConfigured || c.memLimit
+  const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
+  return c.state === 'running' ? (
+    <div className={`text-[11px] whitespace-nowrap ${wide ? 'grid grid-cols-2 gap-4' : 'space-y-2'}`}>
+      <div>
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <span className="text-muted">
+            CPU
+            {c.cpuLimit > 0 && (
+              <span className="ml-1 text-[10px] text-muted/80" title="CPU limit configured on the container">
+                max {c.cpuLimit}
+              </span>
+            )}
+          </span>
+          <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
+        </div>
+        <Meter value={c.cpuPercent} tone="cpu" />
+      </div>
+      <div>
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <span className="text-muted">RAM</span>
+          <span className="tabular-nums">
+            <span className="font-medium">{formatBytes(c.memUsage)}</span>
+            {c.memLimitConfigured > 0 ? (
+              <span className="text-muted" title="Memory limit configured on the container">
+                {' / '}
+                {formatBytes(c.memLimitConfigured)}
+              </span>
+            ) : (
+              <span
+                className="text-muted"
+                title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one in Edit.`}
+              >
+                {' / ∞'}
+              </span>
+            )}
+          </span>
+        </div>
+        <Meter value={memPct} tone="mem" />
+      </div>
+    </div>
+  ) : (
+    <span className="text-xs text-muted">—</span>
   )
 }
 

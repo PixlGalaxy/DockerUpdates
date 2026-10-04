@@ -37,7 +37,7 @@ export default function Modal({ title, subtitle, icon, actions, size = 'lg', onC
         aria-modal="true"
         className={`relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl animate-[pop-in_.18s_ease-out] ${SIZES[size]}`}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3.5">
+        <div className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3.5 sm:px-5">
           {icon && <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-500">{icon}</div>}
           <div className="min-w-0">
             <h2 className="truncate font-semibold">{title}</h2>
@@ -50,7 +50,7 @@ export default function Modal({ title, subtitle, icon, actions, size = 'lg', onC
             </IconButton>
           </div>
         </div>
-        <div className={`min-h-0 flex-1 overflow-auto ${flush ? '' : 'p-5'}`}>{children}</div>
+        <div className={`min-h-0 flex-1 overflow-auto ${flush ? '' : 'p-4 sm:p-5'}`}>{children}</div>
       </div>
     </div>
   )

@@ -191,13 +191,13 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
   const selectedNetwork = networks.find((n) => n.name === form.network)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm animate-[fade-in_.15s_ease-out] sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 backdrop-blur-sm animate-[fade-in_.15s_ease-out] sm:p-8">
       <div className="absolute inset-0" onClick={() => !saving && onClose()} />
       <form
         onSubmit={handleSubmit}
         className="relative w-full max-w-3xl rounded-2xl border border-line bg-surface shadow-2xl animate-[pop-in_.18s_ease-out]"
       >
-        <div className="flex items-center gap-3 border-b border-line px-6 py-4">
+        <div className="flex items-center gap-3 border-b border-line px-4 py-4 sm:px-6">
           <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-sky-500/10">
             {form.iconUrl && !iconBroken ? (
               <img src={form.iconUrl} alt="" className="size-8 object-contain" onError={() => setIconBroken(true)} />
@@ -238,7 +238,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
         </div>
 
         {mode === 'add' && templates.length > 0 && (
-          <div className="border-b border-line bg-surface-2/40 px-6 py-3">
+          <div className="border-b border-line bg-surface-2/40 px-4 py-3 sm:px-6">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted uppercase">
               <LayoutTemplate size={13} /> Templates
             </div>
@@ -267,8 +267,8 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
           </div>
         )}
 
-        <div className="space-y-6 px-6 py-5">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-6 px-4 py-5 sm:px-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Name">
               <input
                 required
@@ -438,7 +438,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-line bg-surface-2/50 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-line bg-surface-2/50 px-4 py-4 sm:px-6">
           {editing && (
             <span className="mr-auto hidden items-center gap-1.5 text-xs text-amber-600 sm:flex dark:text-amber-400">
               <TriangleAlert size={13} /> The container will be recreated

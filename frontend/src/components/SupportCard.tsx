@@ -48,7 +48,7 @@ export default function SupportCard() {
           loading="lazy"
           draggable={false}
           // The artwork has empty space at the top: crop it so the characters fill the box
-          className="h-44 w-52 shrink-0 object-cover object-bottom select-none sm:h-52 sm:w-60"
+          className="h-52 w-60 shrink-0 object-cover object-bottom select-none"
         />
       </div>
     </section>

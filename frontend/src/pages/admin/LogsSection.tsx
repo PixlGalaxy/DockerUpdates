@@ -162,13 +162,13 @@ export default function LogsSection({ onError }: SectionProps) {
           <p className="px-4 py-6 text-zinc-500">No log lines{channel || level ? ' match these filters' : ''}.</p>
         ) : (
           data.entries.map((e) => (
-            <div key={e.id} className="flex gap-3 px-4 py-0.5 hover:bg-white/[0.03]">
+            <div key={e.id} className="flex gap-3 px-4 py-0.5 hover:bg-white/[0.03] max-sm:flex-wrap max-sm:gap-y-0.5 max-sm:py-1.5">
               <span className="shrink-0 text-zinc-500 select-none" title={e.time}>
                 {formatTime(e.time)}
               </span>
               <span className={`h-fit w-12 shrink-0 rounded px-1 text-center text-[10px] font-semibold ${CHANNEL_STYLE[e.channel]}`}>{e.channel}</span>
               <span className={`w-10 shrink-0 font-semibold ${LEVEL_STYLE[e.level]}`}>{e.level}</span>
-              <span className={`min-w-0 flex-1 break-all whitespace-pre-wrap ${LEVEL_STYLE[e.level]}`}>{e.message}</span>
+              <span className={`min-w-0 flex-1 break-all whitespace-pre-wrap max-sm:basis-full ${LEVEL_STYLE[e.level]}`}>{e.message}</span>
             </div>
           ))
         )}
