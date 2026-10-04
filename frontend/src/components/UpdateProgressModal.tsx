@@ -29,16 +29,26 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
   const [lost, setLost] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
+  // Latest callback without re-subscribing: the parent re-renders every second (live stats)
+  const selfUpdateRef = useRef(onSelfUpdate)
+  useEffect(() => {
+    selfUpdateRef.current = onSelfUpdate
+  }, [onSelfUpdate])
 
   useEffect(() => {
     const es = new EventSource(`/api/operations/${opId}/stream`)
     let lineNo = 0
+    // The server replays the whole log on every (re)connection: start from scratch each time
+    es.addEventListener('title', () => {
+      lineNo = 0
+      setSections([])
+    })
     es.onmessage = (msg) => {
       const e: Event = JSON.parse(msg.data)
       if (e.t === 'done') {
         setDone(e)
         es.close()
-        if (e.ok && e.result?.selfUpdate) onSelfUpdate()
+        if (e.ok && e.result?.selfUpdate) selfUpdateRef.current()
         return
       }
       setSections((prev) => {
@@ -62,7 +72,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
       if (es.readyState === EventSource.CLOSED) setLost(true)
     }
     return () => es.close()
-  }, [opId, onSelfUpdate])
+  }, [opId])
 
   useEffect(() => {
     if (follow.current && box.current) box.current.scrollTop = box.current.scrollHeight
@@ -143,7 +153,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
           ) : (
             <>
               <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                {failed ? <CircleAlert size={16} /> : <CircleCheck size={16} />} Done
+                {failed ? <CircleAlert size={16} /> : <CircleCheck size={16} />} {failed ? 'Completed with errors' : 'Completed successfully'}
               </span>
               <Button variant="primary" onClick={onClose}>
                 Done

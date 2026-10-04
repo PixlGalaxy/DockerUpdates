@@ -40,7 +40,7 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
   dead: { label: 'Dead', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
 }
 
-const td = 'px-4 py-3.5 align-middle'
+const td = 'px-3 py-3.5 align-middle'
 
 const HEALTH = {
   healthy: { label: 'Healthy', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
@@ -163,7 +163,7 @@ export default function ContainerRow({
               </span>
             )}
           </button>
-          <div className="min-w-0">
+          <div className="max-w-60 min-w-0">
             <div className="flex items-center gap-2">
               <button type="button" onClick={openMenuHere} className="truncate text-left font-semibold hover:text-sky-600 dark:hover:text-sky-400">
                 {c.name}
@@ -237,9 +237,10 @@ export default function ContainerRow({
                   title={`${tag}: ${c.updateKind === 'version' ? 'version' : c.updateKind === 'revision' ? 'commit' : 'image ID'} ${c.updateFrom} → ${c.updateTo}`}
                   className="inline-flex items-center gap-1"
                 >
-                  <span className="opacity-70">{c.updateFrom}</span>
+                  {/* Image IDs are shown short like git commits; the tooltip has the full value */}
+                  <span className="opacity-70">{c.updateKind === 'image' ? c.updateFrom.slice(0, 7) : c.updateFrom}</span>
                   <span aria-hidden>→</span>
-                  <span className="font-semibold">{c.updateTo}</span>
+                  <span className="font-semibold">{c.updateKind === 'image' ? c.updateTo.slice(0, 7) : c.updateTo}</span>
                 </span>
               </Chip>
             ) : (
@@ -262,7 +263,7 @@ export default function ContainerRow({
           <td className={td}>
             <Chip className="font-sans text-xs">{c.network}</Chip>
           </td>
-          <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+          <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
             <div>{c.ip || (hostNet ? hostIp : <span className="text-muted">—</span>)}</div>
             {c.mac && <div className="mt-0.5 text-[11px] text-muted">{c.mac}</div>}
           </td>
@@ -270,7 +271,7 @@ export default function ContainerRow({
       )}
 
       {/* Container port */}
-      <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
         {hostNet ? (
           <span className="text-muted">all</span>
         ) : c.ports.length === 0 ? (
@@ -285,7 +286,7 @@ export default function ContainerRow({
       </td>
 
       {/* LAN IP:Port */}
-      <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
         {hostNet ? (
           <span>{hostIp}</span>
         ) : published.length === 0 ? (
@@ -314,7 +315,7 @@ export default function ContainerRow({
       </td>
 
       {advanced && (
-        <td className={`${td} min-w-72`}>
+        <td className={`${td} min-w-52`}>
           {c.volumes.length === 0 ? (
             <span className="text-xs text-muted">—</span>
           ) : (
@@ -348,36 +349,39 @@ export default function ContainerRow({
       )}
 
       {/* Resources */}
-      <td className={`${td} w-48`}>
+      <td className={`${td} w-44 min-w-44`}>
         {c.state === 'running' ? (
-          <div className="space-y-2">
+          <div className="space-y-2 text-[11px] whitespace-nowrap">
             <div>
-              <div className="mb-1 flex justify-between text-[11px]">
+              <div className="mb-1 flex items-baseline justify-between gap-2">
                 <span className="text-muted">
                   CPU
-                  {c.cpuLimit > 0 && <span title="CPU limit configured on the container"> · max {c.cpuLimit} cores</span>}
+                  {c.cpuLimit > 0 && (
+                    <span className="ml-1 text-[10px] text-muted/80" title="CPU limit configured on the container">
+                      max {c.cpuLimit}
+                    </span>
+                  )}
                 </span>
                 <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
               </div>
               <Meter value={c.cpuPercent} tone="cpu" />
             </div>
             <div>
-              <div className="mb-1 flex justify-between text-[11px]">
+              <div className="mb-1 flex items-baseline justify-between gap-2">
                 <span className="text-muted">RAM</span>
-                <span className="font-medium tabular-nums">
-                  {formatBytes(c.memUsage)}
+                <span className="tabular-nums">
+                  <span className="font-medium">{formatBytes(c.memUsage)}</span>
                   {c.memLimitConfigured > 0 ? (
                     <span className="text-muted" title="Memory limit configured on the container">
-                      {' '}
-                      / {formatBytes(c.memLimitConfigured)}
+                      {' / '}
+                      {formatBytes(c.memLimitConfigured)}
                     </span>
                   ) : (
                     <span
                       className="text-muted"
                       title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one in Edit.`}
                     >
-                      {' '}
-                      / no limit
+                      {' / ∞'}
                     </span>
                   )}
                 </span>
@@ -396,8 +400,8 @@ export default function ContainerRow({
       </td>
 
       {/* Uptime */}
-      <td className={`${td} text-xs whitespace-nowrap`}>
-        <div className="font-medium">{active && c.startedAt ? timeAgo(c.startedAt) : '—'}</div>
+      <td className={`${td} min-w-28 text-xs`}>
+        <div className="font-medium whitespace-nowrap">{active && c.startedAt ? timeAgo(c.startedAt) : '—'}</div>
         <div className="mt-0.5 text-muted">Created {timeAgo(c.createdAt)} ago</div>
       </td>
     </tr>

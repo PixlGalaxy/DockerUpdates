@@ -46,7 +46,7 @@ export default function ContainerTable({
               {heads.map((h, i) => (
                 <th
                   key={h || i}
-                  className="px-4 py-2.5 text-[11px] font-semibold tracking-wider whitespace-nowrap text-muted uppercase"
+                  className="px-3 py-2.5 text-[11px] leading-tight font-semibold tracking-wider text-muted uppercase"
                 >
                   {h}
                 </th>
