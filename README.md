@@ -5,7 +5,7 @@
 <h1 align="center">DockerUpdates</h1>
 
 <p align="center">
-  A self-hosted web dashboard to manage the Docker containers of your server and keep them updated, Unraid style.
+  A self-hosted web dashboard to manage the Docker containers of your server and keep them updated.
 </p>
 
 <p align="center">
@@ -31,11 +31,11 @@
 - **Update history** per container, and **image cleanup** (after each update and/or on a schedule)
 - **Logs and console**: live logs with filter and download, and an interactive shell inside any running container
 - **Self-update**: DockerUpdates updates itself safely through a short-lived helper container
-- **Edit containers like Unraid**: name, image, network, auto-restart, memory limit slider, ports, volumes, environment variables and **Extra parameters** (`--cpus=1.5 --hostname=app …`) validated as you type
+- **Edit containers**: name, image, network, auto-restart, memory limit slider, ports, volumes, environment variables and **Extra parameters** (`--cpus=1.5 --hostname=app …`) validated as you type
 - **Templates**: every created or edited container is saved as a template; import / export as JSON
 - **Dedicated LAN IPs (macvlan / ipvlan)**: enable it once in Settings (the server network is detected automatically, nothing to run on the host), then give containers a fixed IP with an availability check
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
-- **Icons**: custom icon URL per image, Unraid icon label, or the app's favicon discovered automatically
+- **Icons**: custom icon URL per image, or the app's favicon discovered automatically
 - **Secure by default**: login, revocable sessions, brute-force lockout, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
 - Light / dark theme, search and filters, Linux and Windows (Docker Desktop) hosts
 
@@ -44,14 +44,14 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/context-menu.webp" alt="Container actions on right-click" /><p align="center"><b>Right-click actions</b><br />Console, logs, edit, update, history and more</p></td>
-    <td width="50%"><img src="docs/screenshots/update-log-finished.webp" alt="Live update log" /><p align="center"><b>Live update log</b><br />Pull progress, the docker run command and cleanup, Unraid style</p></td>
+    <td width="50%"><img src="docs/screenshots/update-log-finished.webp" alt="Live update log" /><p align="center"><b>Live update log</b><br />Pull progress, the docker run command and cleanup</p></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/auto-update.webp" alt="Auto-update schedule" /><p align="center"><b>Automatic updates</b><br />Global schedule, cooldown and "update" or "notify only"</p></td>
     <td><img src="docs/screenshots/auto-update-containers.webp" alt="Per-container auto-update" /><p align="center"><b>Per container</b><br />Global, custom time or off for every container</p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/edit.webp" alt="Container editor" /><p align="center"><b>Unraid-style editor</b><br />Memory slider, fixed IP check, ports, volumes and extra parameters</p></td>
+    <td><img src="docs/screenshots/edit.webp" alt="Container editor" /><p align="center"><b>Container editor</b><br />Memory slider, fixed IP check, ports, volumes and extra parameters</p></td>
     <td><img src="docs/screenshots/settings.webp" alt="Notification settings" /><p align="center"><b>Notifications</b><br />Discord embeds, Telegram, ntfy and signed webhooks</p></td>
   </tr>
   <tr>
