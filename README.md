@@ -29,6 +29,7 @@
 - **Self-update**: DockerUpdates updates itself safely through a short-lived helper container
 - **Edit containers like Unraid**: name, image, network, auto-restart, memory limit slider, ports, volumes, environment variables and **Extra parameters** (`--cpus=1.5 --hostname=app …`) validated as you type
 - **Templates**: every created or edited container is saved as a template; import / export as JSON
+- **Dedicated LAN IPs (macvlan / ipvlan)**: enable it once in Settings (the server network is detected automatically, nothing to run on the host), then give containers a fixed IP with an availability check
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
 - **Icons**: custom icon URL per image, Unraid icon label, or the app's favicon discovered automatically
 - **Secure by default**: login, revocable sessions, brute-force lockout, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))

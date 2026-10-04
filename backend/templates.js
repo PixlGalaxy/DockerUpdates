@@ -9,7 +9,7 @@ const safeName = (name) => {
   return name;
 };
 
-const FIELDS = ['name', 'image', 'network', 'restart', 'ports', 'volumes', 'env', 'extraParams', 'iconUrl', 'memory'];
+const FIELDS = ['name', 'image', 'network', 'ip', 'restart', 'ports', 'volumes', 'env', 'extraParams', 'iconUrl', 'memory'];
 
 /** Keeps only known spec fields (templates can be imported from files). */
 export function cleanSpec(spec) {

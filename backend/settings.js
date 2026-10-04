@@ -33,6 +33,16 @@ export const DEFAULTS = {
     ntfy: { enabled: false, url: '', token: '' },
     webhook: { enabled: false, url: '', secret: '' },
   },
+  network: {
+    // Name of the macvlan / ipvlan network created from Settings ('' = not enabled).
+    // Only set by enableLan(); cannot be changed or removed from the UI.
+    lanNetwork: '',
+  },
+  health: {
+    // Stop a container that crashes and restarts this many times in a row
+    stopRestartLoops: true,
+    maxRestarts: 5,
+  },
   cleanup: {
     removeOldImageAfterUpdate: true,
     scheduled: false,
@@ -138,13 +148,24 @@ function validate(s) {
   validateUrl(n.ntfy.url, 'ntfy URL');
   validateUrl(n.webhook.url, 'Webhook URL');
   if (!['dangling', 'unused'].includes(s.cleanup.mode)) throw bad('Invalid cleanup mode');
+  const max = Number(s.health.maxRestarts);
+  if (!Number.isInteger(max) || max < 2 || max > 50) throw bad('Max restarts must be between 2 and 50');
+  s.health.maxRestarts = max;
   validateSchedule(s.cleanup.schedule, 'Cleanup schedule');
+}
+
+/** Internal update of the network section (used by macvlan.js only). */
+export async function setNetworkSettings(network) {
+  settings = { ...getSettings(), network: { ...getSettings().network, ...network } };
+  await writeJson(FILE, settings);
 }
 
 /** Applies a (partial) settings object from the browser. Masked secrets keep their value. */
 export async function updateSettings(patch) {
   const current = getSettings();
   const next = merge(structuredClone(current), patch);
+  // The LAN network is permanent once enabled: ignore any change sent by the browser
+  next.network = structuredClone(current.network);
   for (const keys of SECRETS) {
     if (get(next, keys) === MASK) set(next, keys, get(current, keys));
   }

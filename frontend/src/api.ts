@@ -12,6 +12,9 @@ import type {
   HistoryEntry,
   HostInfo,
   HostUsage,
+  NetworkInfo,
+  LanDetection,
+  LanStatus,
   RunResult,
   Schedule,
   SchedulePreview,
@@ -79,7 +82,13 @@ export const api = {
   spec: (id: string) => request<ContainerSpec>(`/api/containers/${id}/spec`),
   edit: (id: string, spec: ContainerSpec) =>
     request<{ name: string }>(`/api/containers/${id}`, { method: 'PUT', body: JSON.stringify(spec) }),
-  networks: () => request<string[]>('/api/networks'),
+  networks: () => request<NetworkInfo[]>('/api/networks'),
+  lanStatus: () => request<LanStatus>('/api/lan-network'),
+  detectLan: () => post<LanDetection>('/api/lan-network/detect'),
+  enableLan: (cfg: { name: string; driver: string; parent: string; subnet: string; gateway: string; ipRange?: string }) =>
+    post<LanStatus>('/api/lan-network/enable', cfg),
+  checkIp: (network: string, ip: string, container?: string) =>
+    post<{ available: boolean; reason: string }>('/api/networks/check-ip', { network, ip, container }),
   checkExtraParams: (extraParams: string) =>
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
   host: () => request<HostInfo>('/api/host'),

@@ -1,12 +1,14 @@
 // Health alerts: listens to Docker events and notifies when a container becomes unhealthy,
 // recovers, crashes (exits on its own with an error) or keeps restarting.
-import { docker, hostName } from './docker.js';
+import { docker, hostName, selfId } from './docker.js';
 import { notify } from './notify.js';
+import { getSettings } from './settings.js';
 
 const RESTART_WINDOW_MS = 10 * 60_000;
 const RESTART_LOOP_COUNT = 3; // crashes within the window -> "restart loop"
 const STOP_GRACE_MS = 30_000; // a "die" right after a stop/kill is intentional
 const ALERT_COOLDOWN_MS = 15 * 60_000; // same alert for the same container at most every 15 min
+const QUICK_CRASH_MS = 60_000; // a run shorter than this counts towards a restart loop
 
 // Containers being recreated by DockerUpdates (updates, edits): no alerts meanwhile
 const suppressed = new Map(); // name -> until
@@ -14,6 +16,7 @@ const lastStop = new Map(); // id -> time of the last stop/kill request
 const crashes = new Map(); // name -> [timestamps]
 const unhealthy = new Set(); // names currently unhealthy (to announce recovery)
 const lastAlert = new Map(); // `${name}:${kind}` -> time
+const quickCrashes = new Map(); // name -> consecutive short runs (reset by a run > QUICK_CRASH_MS)
 
 /** Silences alerts for a container for a while (called around updates and edits). */
 export function suppressHealthAlerts(name, ms = 3 * 60_000) {
@@ -72,8 +75,15 @@ async function onEvent(e) {
     const exitCode = Number(attrs.exitCode ?? 0);
     const intentional = Date.now() - (lastStop.get(id) ?? 0) < STOP_GRACE_MS;
     lastStop.delete(id);
+    if (intentional || isSuppressed(name)) {
+      quickCrashes.delete(name);
+      return;
+    }
+
+    if (await stopRestartLoop(id, name, attrs.image, exitCode)) return;
+
     // Exit code 0 is a normal end (one-shot jobs, scheduled tasks), not a crash
-    if (intentional || exitCode === 0 || isSuppressed(name)) return;
+    if (exitCode === 0) return;
 
     const now = Date.now();
     const recent = (crashes.get(name) ?? []).filter((t) => now - t < RESTART_WINDOW_MS).concat(now);
@@ -92,6 +102,49 @@ async function onEvent(e) {
   if (action === 'oom' && !isSuppressed(name) && shouldAlert(name, 'oom')) {
     await send('crashed', { name, image: attrs.image, error: 'Out of memory: the container hit its memory limit' });
   }
+}
+
+/**
+ * Restart-loop protection: a container that dies quickly and is restarted by Docker
+ * `maxRestarts` times in a row is stopped. Returns true when it was stopped.
+ */
+async function stopRestartLoop(id, name, image, exitCode) {
+  let info;
+  try {
+    info = await docker.getContainer(id).inspect();
+  } catch {
+    return false;
+  }
+  const ranMs = Date.parse(info.State.FinishedAt) - Date.parse(info.State.StartedAt);
+  if (!(ranMs < QUICK_CRASH_MS)) {
+    quickCrashes.delete(name);
+    return false;
+  }
+  const count = (quickCrashes.get(name) ?? 0) + 1;
+  quickCrashes.set(name, count);
+
+  const policy = info.HostConfig.RestartPolicy?.Name || 'no';
+  const willRestart = policy === 'always' || policy === 'unless-stopped' || (policy === 'on-failure' && exitCode !== 0);
+  const cfg = getSettings().health;
+  if (!willRestart || !cfg.stopRestartLoops || count < cfg.maxRestarts) return false;
+  if (info.Id === (await selfId())) return false; // never stop DockerUpdates itself
+
+  lastStop.set(id, Date.now());
+  quickCrashes.delete(name);
+  try {
+    await docker.getContainer(id).stop({ t: 5 });
+  } catch {
+    // already stopped between restarts
+  }
+  console.log(`[audit] ${new Date().toISOString()} ${name} stopped automatically: restart loop (${count} quick restarts, last exit code ${exitCode})`);
+  if (shouldAlert(name, 'autostop')) {
+    await send('crashed', {
+      name,
+      image,
+      error: `Restart loop: stopped automatically after ${count} restarts in a row (last exit code ${exitCode}). Check its logs, then start it again.`,
+    });
+  }
+  return true;
 }
 
 /** Subscribes to Docker events and reconnects with backoff if the stream ends. */

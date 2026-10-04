@@ -1,7 +1,8 @@
-import { Bell, Brush, Globe2, LoaderCircle, Save, Send, Trash2, Undo2 } from 'lucide-react'
+import { Activity, Bell, Brush, Globe2, LoaderCircle, Save, Send, Trash2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
+import LanNetworkCard from '../components/LanNetworkCard'
 import ScheduleEditor from '../components/ScheduleEditor'
 import { selectCls } from '../schedule'
 import type { ToastTone } from '../components/Toasts'
@@ -225,6 +226,33 @@ export default function SettingsPage({ toast, onError }: Props) {
             <Input label="Secret (optional)" type="password" value={n.webhook.secret} placeholder="shared secret" onChange={(secret) => setChannel('webhook', { secret })} />
           </ChannelCard>
         </div>
+      </Card>
+
+      <LanNetworkCard toast={toast} onError={onError} />
+
+      <Card title="Health" description="Protect the server from containers stuck in a crash loop." icon={<Activity size={18} />}>
+        <SettingRow
+          label="Stop containers in a restart loop"
+          description="If a container crashes within a minute of starting and Docker restarts it this many times in a row, it is stopped and you get a notification."
+        >
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min={2}
+              max={50}
+              disabled={!draft.health.stopRestartLoops}
+              value={draft.health.maxRestarts}
+              onChange={(e) => setDraft({ ...draft, health: { ...draft.health, maxRestarts: Number(e.target.value) } })}
+              className={`${selectCls} w-20 disabled:opacity-40`}
+            />
+            <span className="text-xs text-muted">restarts</span>
+            <Toggle
+              label="Stop containers in a restart loop"
+              checked={draft.health.stopRestartLoops}
+              onChange={(stopRestartLoops) => setDraft({ ...draft, health: { ...draft.health, stopRestartLoops } })}
+            />
+          </div>
+        </SettingRow>
       </Card>
 
       <Card title="Image cleanup" description="Free disk space by removing images that no container uses anymore." icon={<Brush size={18} />}>

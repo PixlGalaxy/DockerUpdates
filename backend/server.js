@@ -8,6 +8,8 @@ import * as dk from './docker.js';
 import { startHealthMonitor } from './health.js';
 import { listHistory } from './history.js';
 import { hostUsage } from './hostUsage.js';
+import { checkIp } from './ipCheck.js';
+import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import * as scheduler from './scheduler.js';
@@ -77,6 +79,11 @@ app.get('/api/stats', handle(() => dk.getStats()));
 app.get('/api/host', handle(() => dk.hostInfo()));
 app.get('/api/host/usage', handle(() => hostUsage()));
 app.get('/api/networks', handle(() => dk.listNetworks()));
+app.get('/api/lan-network', handle(() => lanStatus()));
+app.post('/api/lan-network/detect', handle(() => detectLan()));
+app.post('/api/lan-network/enable', handle((req) => enableLan(req.body ?? {})));
+app.post('/api/networks/check-ip', handle((req) =>
+  checkIp(String(req.body?.network ?? ''), String(req.body?.ip ?? '').trim(), req.body?.container)));
 app.post('/api/extra-params/check', handle((req) => dk.checkExtraParams(req.body?.extraParams ?? '')));
 
 // Container icons (cached files, see icons.js)

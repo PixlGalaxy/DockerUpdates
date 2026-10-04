@@ -235,9 +235,10 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Console', icon: <Terminal size={15} />, disabled: !running, onSelect: () => setPanel({ kind: 'console', container: c }) },
       { label: 'Logs', icon: <ScrollText size={15} />, onSelect: () => setPanel({ kind: 'logs', container: c }) },
       { label: 'Start', icon: <Play size={15} />, hidden: isActive(c), separatorBefore: true, onSelect: act('start') },
-      { label: 'Stop', icon: <Square size={15} />, hidden: !running || c.isSelf, separatorBefore: true, onSelect: act('stop') },
+      // Also while restarting / paused, so a container in a restart loop can always be stopped
+      { label: 'Stop', icon: <Square size={15} />, hidden: !isActive(c) || c.isSelf, separatorBefore: true, onSelect: act('stop') },
       { label: 'Pause', icon: <Pause size={15} />, hidden: !running || c.isSelf, onSelect: act('pause') },
-      { label: 'Resume', icon: <Play size={15} />, hidden: c.state !== 'paused', separatorBefore: true, onSelect: act('unpause') },
+      { label: 'Resume', icon: <Play size={15} />, hidden: c.state !== 'paused', onSelect: act('unpause') },
       { label: 'Restart', icon: <RotateCw size={15} />, hidden: !isActive(c), separatorBefore: c.isSelf, onSelect: act('restart') },
       { label: 'Edit', icon: <Pencil size={15} />, hidden: c.isSelf, separatorBefore: true, onSelect: () => void openEditor(c.id) },
       { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => withBusy(c.id, () => api.checkUpdate(c.id), reportCheck) },

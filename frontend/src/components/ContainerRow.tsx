@@ -320,10 +320,16 @@ export default function ContainerRow({
           ) : (
             <div className="space-y-1">
               {visibleVolumes.map((v) => (
-                <div key={v.container} className="font-mono text-[11px] leading-relaxed break-all">
-                  <span className="text-fg">{v.container}</span>
-                  <span className="mx-1 text-muted">↔</span>
+                <div key={v.container} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-[11px] leading-relaxed break-all">
+                  <span className="shrink-0 rounded bg-amber-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300" title="Path on the host (or Docker volume name)">
+                    Host
+                  </span>
                   <span className="text-muted">{v.host}</span>
+                  <span className="text-muted">→</span>
+                  <span className="shrink-0 rounded bg-sky-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-sky-700 uppercase dark:text-sky-300" title="Path inside the container">
+                    Container
+                  </span>
+                  <span className="text-fg">{v.container}</span>
                 </div>
               ))}
               {c.volumes.length > 3 && (

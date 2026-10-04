@@ -137,6 +137,42 @@ export interface ContainerSpec {
   iconUrl: string
   /** Memory limit in bytes (0 = no limit) */
   memory: number
+  /** Fixed IPv4 on a user-defined network ('' = automatic) */
+  ip: string
+}
+
+export interface LanDetection {
+  name: string
+  driver: 'macvlan' | 'ipvlan'
+  parent: string
+  hostIp: string
+  subnet: string
+  gateway: string
+  wifi: boolean
+}
+
+export interface LanStatus {
+  enabled: boolean
+  missing: boolean
+  dockerDesktop: boolean
+  network: {
+    name: string
+    driver: string
+    parent: string | null
+    subnet: string | null
+    gateway: string | null
+    ipRange: string | null
+    containers: number
+  } | null
+}
+
+export interface NetworkInfo {
+  name: string
+  driver: string
+  subnet: string | null
+  gateway: string | null
+  /** User-defined network: a fixed IP can be set */
+  fixedIp: boolean
 }
 
 export interface HostInfo {
@@ -188,6 +224,14 @@ export interface Settings {
     telegram: { enabled: boolean; botToken: string; chatId: string }
     ntfy: { enabled: boolean; url: string; token: string }
     webhook: { enabled: boolean; url: string; secret: string }
+  }
+  network: {
+    /** macvlan / ipvlan network enabled in Settings ('' = not enabled) */
+    lanNetwork: string
+  }
+  health: {
+    stopRestartLoops: boolean
+    maxRestarts: number
   }
   cleanup: {
     removeOldImageAfterUpdate: boolean

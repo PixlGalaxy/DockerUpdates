@@ -5,6 +5,7 @@ import { buildCreateOptions, specFromInspect, validateSpec } from './containerSp
 import { describeExtraParams } from './extraParams.js';
 import { suppressHealthAlerts } from './health.js';
 import { addHistory, renameInHistory } from './history.js';
+import { validateFixedIp } from './ipCheck.js';
 import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
 import { getSettings } from './settings.js';
@@ -666,10 +667,7 @@ export function checkExtraParams(input) {
   return { summary: describeExtraParams(parsed) };
 }
 
-export async function listNetworks() {
-  const nets = await docker.listNetworks();
-  return nets.map((n) => n.Name).sort();
-}
+export { listNetworkInfo as listNetworks } from './ipCheck.js';
 
 /** Applies an edited spec: validates, pulls a new image if needed, recreates the container. */
 export async function editContainer(id, spec) {
@@ -677,6 +675,7 @@ export async function editContainer(id, spec) {
   const current = await docker.getContainer(id).inspect();
   const next = { ...spec, image: withTag(spec.image ?? '') };
   validateSpec(next); // fail before touching anything
+  await validateFixedIp(next.network || 'bridge', String(next.ip ?? '').trim());
 
   // Icon first: a bad URL aborts the edit
   if (spec.iconUrl !== undefined) await setCustomIcon(next.image, spec.iconUrl);
@@ -694,6 +693,7 @@ export async function editContainer(id, spec) {
 export async function createContainer(spec) {
   const next = { ...spec, image: withTag(spec?.image ?? '') };
   const options = buildCreateOptions(next);
+  await validateFixedIp(next.network || 'bridge', String(next.ip ?? '').trim());
   if (await exists(next.name)) throw httpError(409, `A container named "${next.name}" already exists`);
   if (spec.iconUrl) await setCustomIcon(next.image, spec.iconUrl);
   await pull(next.image);

@@ -43,10 +43,13 @@ export function specFromInspect(inspect, config, { logDriver } = {}) {
   });
 
   const restart = host.RestartPolicy?.Name || 'no';
+  const networkName = host.NetworkMode === 'default' ? 'bridge' : host.NetworkMode;
   return {
     name: inspect.Name.replace(/^\//, ''),
     image: inspect.Config.Image,
-    network: host.NetworkMode === 'default' ? 'bridge' : host.NetworkMode,
+    network: networkName,
+    // Only an explicitly configured IP (not one assigned automatically by Docker)
+    ip: inspect.NetworkSettings?.Networks?.[networkName]?.IPAMConfig?.IPv4Address ?? '',
     restart: RESTART.includes(restart) ? restart : 'no',
     ports,
     volumes,
@@ -148,13 +151,13 @@ export function buildCreateOptions(spec, base = null) {
   if (!['bridge', 'host', 'none', 'default'].includes(network) && !network.startsWith('container:')) {
     const old = base?.networks?.[network];
     const shortId = base?.inspect?.Id.slice(0, 12);
-    NetworkingConfig = {
-      EndpointsConfig: {
-        [network]: old
-          ? { IPAMConfig: old.IPAMConfig, Aliases: (old.Aliases ?? []).filter((a) => a !== shortId) }
-          : {},
-      },
-    };
+    const endpoint = old
+      ? { IPAMConfig: old.IPAMConfig, Aliases: (old.Aliases ?? []).filter((a) => a !== shortId) }
+      : {};
+    // Fixed IP from the form ('' = automatic)
+    const ip = String(spec.ip ?? '').trim();
+    endpoint.IPAMConfig = ip ? { ...(endpoint.IPAMConfig ?? {}), IPv4Address: ip } : undefined;
+    NetworkingConfig = { EndpointsConfig: { [network]: endpoint } };
   }
 
   return { name: spec.name, ...config, HostConfig: host, NetworkingConfig };

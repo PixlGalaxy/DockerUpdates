@@ -1,6 +1,8 @@
 import {
   CircleAlert,
   CircleCheck,
+  CircleX,
+  Network,
   FileDown,
   FileUp,
   ImageIcon,
@@ -14,7 +16,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api } from '../api'
-import type { ContainerSpec, TemplateSummary } from '../types'
+import type { ContainerSpec, NetworkInfo, TemplateSummary } from '../types'
 import { formatBytes } from '../utils'
 import Logo from './Logo'
 import { Button, IconButton, Toggle } from './ui'
@@ -50,6 +52,7 @@ function toSpec(data: unknown): ContainerSpec {
     extraParams: typeof d.extraParams === 'string' ? d.extraParams : '',
     iconUrl: typeof d.iconUrl === 'string' ? d.iconUrl : '',
     memory: Number(d.memory) > 0 ? Number(d.memory) : 0,
+    ip: typeof d.ip === 'string' ? d.ip : '',
   }
 }
 
@@ -64,6 +67,7 @@ const EMPTY: ContainerSpec = {
   extraParams: '',
   iconUrl: '',
   memory: 0,
+  ip: '',
 }
 
 const inputCls =
@@ -75,7 +79,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
   const [form, setForm] = useState<ContainerSpec>({ ...EMPTY, ...initial })
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
-  const [networks, setNetworks] = useState<string[]>([])
+  const [networks, setNetworks] = useState<NetworkInfo[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [extraCheck, setExtraCheck] = useState<ExtraCheck>({ state: 'idle' })
@@ -183,7 +187,8 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
     }
   }
 
-  const networkOptions = [...new Set(['bridge', 'host', 'none', ...networks, form.network])].filter(Boolean)
+  const networkOptions = [...new Set(['bridge', 'host', 'none', ...networks.map((n) => n.name), form.network])].filter(Boolean)
+  const selectedNetwork = networks.find((n) => n.name === form.network)
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm animate-[fade-in_.15s_ease-out] sm:p-8">
@@ -286,13 +291,25 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
             </Field>
             <Field label="Network">
               <select className={inputCls} value={form.network} onChange={(e) => patch({ network: e.target.value })}>
-                {networkOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
+                {networkOptions.map((n) => {
+                  const info = networks.find((x) => x.name === n)
+                  return (
+                    <option key={n} value={n}>
+                      {n}
+                      {info && info.driver !== n ? ` (${info.driver}${info.subnet ? ` ${info.subnet}` : ''})` : ''}
+                    </option>
+                  )
+                })}
               </select>
             </Field>
+            <FixedIpField
+              network={form.network}
+              info={selectedNetwork}
+              lanNetwork={networks.find((n) => n.driver === 'macvlan' || n.driver === 'ipvlan')?.name}
+              value={form.ip}
+              container={mode === 'edit' ? initial?.name : undefined}
+              onChange={(ip) => patch({ ip })}
+            />
             <div className="block">
               <span className="mb-1.5 block text-xs font-medium">Restart</span>
               <label className="flex h-9 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm shadow-xs">
@@ -333,6 +350,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
             count={form.ports.length}
             onAdd={() => patch({ ports: [...form.ports, { host: '', container: '', protocol: 'tcp' }] })}
           >
+            <ColumnHeads labels={['Host port (on the server)', 'Container port (inside the app)']} extra="w-24" />
             {form.ports.map((p, i) => (
               <div key={i} className="flex gap-2">
                 <input className={inputCls} placeholder="Host port (8080 or 127.0.0.1:8080)" value={p.host} onChange={(e) => updateAt('ports', i, { host: e.target.value })} />
@@ -352,10 +370,11 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
             count={form.volumes.length}
             onAdd={() => patch({ volumes: [...form.volumes, { host: '', container: '', mode: 'rw' }] })}
           >
+            <ColumnHeads labels={['Host path (on the server)', 'Container path (inside the app)']} extra="w-20" />
             {form.volumes.map((v, i) => (
               <div key={i} className="flex gap-2">
-                <input className={`${inputCls} font-mono`} placeholder="/data" value={v.container} onChange={(e) => updateAt('volumes', i, { container: e.target.value })} />
-                <input className={`${inputCls} font-mono`} placeholder="/mnt/user/appdata/app or volume name" value={v.host} onChange={(e) => updateAt('volumes', i, { host: e.target.value })} />
+                <input className={`${inputCls} font-mono`} placeholder="/mnt/user/appdata/app or volume name" aria-label="Host path" value={v.host} onChange={(e) => updateAt('volumes', i, { host: e.target.value })} />
+                <input className={`${inputCls} font-mono`} placeholder="/data" aria-label="Container path" value={v.container} onChange={(e) => updateAt('volumes', i, { container: e.target.value })} />
                 <select className={`${inputCls} !w-20`} value={v.mode} onChange={(e) => updateAt('volumes', i, { mode: e.target.value as 'rw' | 'ro' })}>
                   <option value="rw">RW</option>
                   <option value="ro">RO</option>
@@ -455,6 +474,104 @@ function ExtraFeedback({ check }: { check: ExtraCheck }) {
     )
   }
   return null
+}
+
+function FixedIpField({
+  network,
+  info,
+  lanNetwork,
+  value,
+  container,
+  onChange,
+}: {
+  network: string
+  info?: NetworkInfo
+  /** macvlan / ipvlan network available on the server, if any */
+  lanNetwork?: string
+  value: string
+  container?: string
+  onChange: (ip: string) => void
+}) {
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const supported = info?.fixedIp ?? false
+  const reason = lanNetwork
+    ? `Select the "${lanNetwork}" network to set a dedicated IP`
+    : 'Enable macvlan in Settings to give this container a dedicated IP'
+
+  async function check() {
+    setChecking(true)
+    setResult(null)
+    try {
+      const r = await api.checkIp(network, value.trim(), container)
+      setResult({ ok: r.available, text: r.available ? 'IP available' : r.reason })
+    } catch (err) {
+      setResult({ ok: false, text: err instanceof Error ? err.message : 'Check failed' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="sm:col-span-2">
+      <span className="mb-1.5 flex items-baseline justify-between gap-2 text-xs font-medium">
+        <span className="inline-flex items-center gap-1.5">
+          <Network size={13} className="text-muted" /> Fixed IP
+        </span>
+        <span className="truncate font-normal text-muted">
+          {supported ? `Empty = automatic${info?.subnet ? ` · subnet ${info.subnet}` : ''}` : reason}
+        </span>
+      </span>
+      <div className="flex gap-2">
+        <input
+          className={`${inputCls} font-mono`}
+          disabled={!supported}
+          value={supported ? value : ''}
+          onChange={(e) => {
+            setResult(null)
+            onChange(e.target.value)
+          }}
+          placeholder={supported ? (info?.gateway ? `e.g. ${info.gateway.replace(/\.\d+$/, '.50')}` : '192.168.0.50') : 'Automatic'}
+          inputMode="decimal"
+        />
+        <Button
+          size="md"
+          icon={checking ? undefined : <Network size={14} />}
+          loading={checking}
+          disabled={!supported || !value.trim()}
+          onClick={() => void check()}
+        >
+          Check
+        </Button>
+      </div>
+      {result && (
+        <p
+          className={`mt-1.5 flex items-center gap-1.5 text-xs font-medium ${
+            result.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+          }`}
+        >
+          {result.ok ? <CircleCheck size={13} /> : <CircleX size={13} />}
+          {result.text}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Column titles above the rows of a mapping section (Ports / Volumes). */
+function ColumnHeads({ labels, extra }: { labels: string[]; extra: string }) {
+  return (
+    <div className="flex gap-2 px-0.5 text-[10px] font-semibold tracking-wider text-muted uppercase">
+      {labels.map((l) => (
+        // Same colors as the table: container = sky, host = amber
+        <span key={l} className={`flex-1 ${l.startsWith('Container') ? 'text-sky-600 dark:text-sky-400' : 'text-amber-600 dark:text-amber-400'}`}>
+          {l}
+        </span>
+      ))}
+      <span className={`shrink-0 ${extra}`} />
+      <span className="w-9 shrink-0" />
+    </div>
+  )
 }
 
 function MemoryField({ value, max, onChange }: { value: number; max: number; onChange: (bytes: number) => void }) {

@@ -31,7 +31,7 @@ export default function ContainerTable({
     ...(advanced ? ['Network', 'IP / MAC'] : []),
     'Container port',
     'LAN IP:Port',
-    ...(advanced ? ['Volume mappings (app ↔ host)'] : []),
+    ...(advanced ? ['Volume mappings (host → container)'] : []),
     'CPU & Memory',
     'Autostart',
     'Uptime',
