@@ -14,17 +14,8 @@
       rel="stylesheet"
     />
     <title>DockerUpdates</title>
-    <script>
-      // Apply the theme before first paint to avoid a flash
-      ;(function () {
-        var stored = null
-        try {
-          stored = JSON.parse(localStorage.getItem('du:theme'))
-        } catch (e) {}
-        var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
-        if (dark) document.documentElement.classList.add('dark')
-      })()
-    </script>
+    <!-- Applies the theme before first paint (external file: the CSP forbids inline scripts) -->
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

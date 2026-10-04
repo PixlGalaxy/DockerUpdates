@@ -4,15 +4,32 @@ import { fileURLToPath } from 'node:url';
 import * as auth from './auth.js';
 import * as dk from './docker.js';
 import { iconFile, initIcons } from './icons.js';
+import {
+  auditLog,
+  permissionsPolicy,
+  sameOriginOnly,
+  securityHeaders,
+  trustProxySetting,
+  validContainerRef,
+} from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VERSION = process.env.APP_VERSION || 'dev';
 
-// Trust reverse proxies on private networks (e.g. Nginx Proxy Manager) for req.ip / req.secure.
-app.set('trust proxy', 'loopback, linklocal, uniquelocal');
-app.use(express.json());
+// Proxies trusted for X-Forwarded-For / X-Forwarded-Proto (set TRUST_PROXY to the NPM IP).
+app.set('trust proxy', trustProxySetting());
+app.disable('x-powered-by');
+app.use(securityHeaders);
+app.use(permissionsPolicy);
+app.use('/api', sameOriginOnly);
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+app.use(express.json({ limit: '100kb' }));
+app.param('id', validContainerRef);
 
 const ok = { ok: true };
 const handle = (fn) => async (req, res) => {
@@ -35,6 +52,7 @@ app.post('/api/auth/logout', auth.logout);
 
 // Everything below requires a valid session
 app.use('/api', auth.requireAuth);
+app.use('/api', auditLog);
 app.get('/api/auth/me', auth.me);
 
 app.get('/api/containers', handle(async () => ({
@@ -49,6 +67,7 @@ app.post('/api/extra-params/check', handle((req) => dk.checkExtraParams(req.body
 
 // Container icons (cached files, see icons.js)
 app.get('/api/icons/:key', async (req, res) => {
+  if (!/^[a-f0-9]{16}$/.test(req.params.key)) return res.status(404).end();
   const file = await iconFile(req.params.key);
   if (!file) return res.status(404).end();
   res.set({
@@ -84,10 +103,20 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // --- Static React files (Vite build) ---
 const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, { index: false }));
 
-// Fallback SPA (Express 5 compatible)
-app.get(/.*/, (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
+// Fallback SPA (Express 5 compatible); index.html is never cached so new versions load
+app.get(/.*/, (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+// Malformed JSON, oversized bodies, unexpected errors: JSON answer, no stack traces
+app.use((err, _req, res, _next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message });
+});
 
 await initIcons();
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
