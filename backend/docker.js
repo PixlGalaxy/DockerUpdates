@@ -8,6 +8,8 @@ import { addHistory, renameInHistory } from './history.js';
 import { validateFixedIp } from './ipCheck.js';
 import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
+import { silent } from './operations.js';
+import { dockerRunCommand, humanSize } from './runCommand.js';
 import { getSettings } from './settings.js';
 import { cachedStats, getStats, initStats, parseSample } from './stats.js';
 import { saveTemplate } from './templates.js';
@@ -296,15 +298,79 @@ export async function removeContainer(id) {
 
 // ---------- Updates ----------
 
-async function pull(image) {
+/**
+ * Turns Docker pull progress events into Unraid-style lines, one per layer, updated in place:
+ * "IMAGE ID [62af1e5c2891]: Pulling fs layer.Downloading 100% of 21 MB.Download complete.Pull complete."
+ */
+function pullReporter(log) {
+  const layers = new Map(); // id -> { steps: [], total, lastEmit }
+  let pulled = 0;
+  let newLayers = 0;
+  let status = '';
+  return {
+    onProgress(e) {
+      if (e.status?.startsWith('Status:')) {
+        status = e.status;
+        return;
+      }
+      if (e.status?.startsWith('Pulling from')) {
+        log.line(`${e.status}.`);
+        return;
+      }
+      if (!e.id || e.status?.startsWith('Digest:')) return;
+      const layer = layers.get(e.id) ?? { steps: [], total: 0, lastEmit: 0 };
+      layers.set(e.id, layer);
+      let step = e.status;
+      if (e.status === 'Downloading' && e.progressDetail?.total) {
+        layer.total = e.progressDetail.total;
+        const pct = Math.floor((e.progressDetail.current / e.progressDetail.total) * 100);
+        step = `Downloading ${pct}% of ${humanSize(layer.total)}`;
+      } else if (e.status === 'Extracting' && e.progressDetail?.total) {
+        step = 'Extracting';
+      }
+      // Progress events come in chunks: a finished download always reads 100%
+      if (e.status === 'Download complete' && layer.total) {
+        const k = layer.steps.findIndex((st) => st.startsWith('Downloading'));
+        if (k !== -1) layer.steps[k] = `Downloading 100% of ${humanSize(layer.total)}`;
+      }
+      // Replace the previous step when it is the same kind (progress updates)
+      const last = layer.steps.at(-1);
+      if (last && last.split(' ')[0] === step.split(' ')[0]) layer.steps[layer.steps.length - 1] = step;
+      else layer.steps.push(step);
+      if (e.status === 'Pull complete') {
+        pulled += layer.total;
+        newLayers++;
+      }
+
+      const final = /complete|exists/i.test(e.status);
+      const now = Date.now();
+      if (final || now - layer.lastEmit > 250) {
+        layer.lastEmit = now;
+        log.layer(e.id, `IMAGE ID [${e.id}]: ${layer.steps.join('.')}.`);
+      }
+    },
+    finish(image) {
+      if (status) log.line(status);
+      else log.line(`Status: Image is up to date for ${image}`);
+      log.line('');
+      log.line('TOTAL DATA PULLED:');
+      // Tiny / cached layers come without size information: count them instead of showing "0 B"
+      log.line(` ${pulled || !newLayers ? humanSize(pulled) : `${newLayers} new layer${newLayers === 1 ? '' : 's'}`}`);
+    },
+  };
+}
+
+async function pull(image, log = silent) {
   const authconfig = await authFor(image);
+  const progress = pullReporter(log);
   try {
     await new Promise((resolve, reject) => {
       docker.pull(image, authconfig ? { authconfig } : {}, (err, stream) => {
         if (err) return reject(err);
-        docker.modem.followProgress(stream, (e) => (e ? reject(e) : resolve()));
+        docker.modem.followProgress(stream, (e) => (e ? reject(e) : resolve()), (e) => progress.onProgress(e));
       });
     });
+    progress.finish(image);
   } catch (err) {
     if (isAuthError(err)) throw Object.assign(httpError(502, await authHint(image)), { auth: true });
     // Docker API status codes (e.g. 401) must not reach the browser as-is.
@@ -410,7 +476,7 @@ async function userConfig(inspect) {
  * Replaces a container with a new one from the same image reference, keeping its configuration.
  * Rolls back to the old container if anything fails. Used directly and by the self-update helper.
  */
-export async function recreateContainer(id, buildOptions) {
+export async function recreateContainer(id, buildOptions, log = silent) {
   const old = docker.getContainer(id);
   const inspect = await old.inspect();
   const name = cleanName(inspect.Name);
@@ -428,11 +494,20 @@ export async function recreateContainer(id, buildOptions) {
 
   suppressHealthAlerts(name);
   suppressHealthAlerts(newName);
-  if (wasRunning) await old.stop({ t: stopTimeout() });
+  if (wasRunning) {
+    log.section(`Stopping container: ${name}`);
+    await old.stop({ t: stopTimeout() });
+    log.line(`Successfully stopped container: ${name}`);
+  }
+  // The old container is only renamed (not removed) until the new one is running: rollback stays possible
+  log.section(`Renaming container: ${name}`);
   await old.rename({ name: `${name}_old` });
+  log.line(`Kept as ${name}_old until the new container is running`);
 
   let created;
   try {
+    log.section('Command execution');
+    log.line(dockerRunCommand({ ...options, name: newName }));
     created = await docker.createContainer({ ...options, name: newName });
     // Reconnect additional networks (create only accepts one)
     const primary = options.HostConfig.NetworkMode;
@@ -447,15 +522,23 @@ export async function recreateContainer(id, buildOptions) {
       }
     }
     if (wasRunning) await created.start();
+    log.line(created.id);
+    log.line('');
+    log.line('The command finished successfully!');
   } catch (err) {
     // Rollback: restore the previous container.
+    log.line(`ERROR: ${err.json?.message ?? err.message}`);
+    log.section(`Rolling back: ${name}`);
     if (created) await created.remove({ force: true }).catch(() => {});
     await old.rename({ name });
     if (wasRunning) await old.start();
+    log.line(`Previous container restored${wasRunning ? ' and started' : ''}`);
     throw err;
   }
 
+  log.section(`Removing container: ${name}_old`);
   await old.remove();
+  log.line(`Successfully removed container: ${name}_old`);
   return newName;
 }
 
@@ -505,7 +588,7 @@ function sameOptions(inspect, config) {
  * Pulls the latest image and recreates the container. Self-updates go through a helper container.
  * Every attempt is recorded in the update history. Returns { name, image, from, to, selfUpdate }.
  */
-export async function updateContainer(id, { trigger = 'manual' } = {}) {
+export async function updateContainer(id, { trigger = 'manual', log = silent } = {}) {
   const inspect = await docker.getContainer(id).inspect();
   const name = cleanName(inspect.Name);
   const image = inspect.Config.Image;
@@ -521,9 +604,12 @@ export async function updateContainer(id, { trigger = 'manual' } = {}) {
       throw httpError(400, `${name} uses a local image ID and cannot be updated from a registry.`);
     }
     // Pull first: if it fails (e.g. auth) the container is left untouched.
+    log.section(`Pulling image: ${image}`);
     try {
-      await pull(image);
+      await pull(image, log);
     } catch (err) {
+      log.line(`ERROR: ${err.message}`);
+      log.line(`${name} was not modified.`);
       if (err.auth) updateStatus.set(name, { status: 'auth-required', message: err.message });
       throw err;
     }
@@ -534,15 +620,25 @@ export async function updateContainer(id, { trigger = 'manual' } = {}) {
       : versionChange(current, latest);
 
     if (await isSelf(id)) {
+      log.section('Updating DockerUpdates');
+      log.line('DockerUpdates cannot replace itself while running: a short-lived helper container will');
+      log.line('recreate it with the new image in a few seconds. This page reloads automatically.');
       await scheduleSelfUpdate(inspect);
       await record('scheduled');
       return { name, image, ...change, selfUpdate: true };
     }
 
-    await recreateContainer(id);
+    await recreateContainer(id, undefined, log);
     updateStatus.set(name, { status: 'up-to-date' });
     await record('success');
-    if (latest.Id !== inspect.Image) await removeOldImage(inspect.Image);
+    if (latest.Id !== inspect.Image) {
+      const removed = await removeOldImage(inspect.Image);
+      if (removed) {
+        const short = inspect.Image.replace(/^sha256:/, '').slice(0, 12);
+        log.section(`Removing orphan image: ${short}`);
+        log.line(`Successfully removed orphan image: ${short}`);
+      }
+    }
     return { name, image, ...change, selfUpdate: false };
   } catch (err) {
     await record('failed', { error: err.message });
@@ -553,10 +649,11 @@ export async function updateContainer(id, { trigger = 'manual' } = {}) {
 /** Deletes the image a container used before an update (if enabled and nothing else uses it). */
 async function removeOldImage(imageId) {
   try {
-    if (!getSettings().cleanup.removeOldImageAfterUpdate) return;
+    if (!getSettings().cleanup.removeOldImageAfterUpdate) return false;
     await docker.getImage(imageId).remove();
+    return true;
   } catch {
-    // still used by another container / already gone
+    return false; // still used by another container / already gone
   }
 }
 
@@ -564,7 +661,7 @@ async function removeOldImage(imageId) {
  * Updates the given containers (default: every one with an update available).
  * DockerUpdates itself always goes last because its update restarts this process.
  */
-export async function updateMany({ ids, trigger = 'manual' } = {}) {
+export async function updateMany({ ids, trigger = 'manual', log = silent } = {}) {
   const summary = { updated: 0, failed: [], selfUpdate: false, items: [] };
   const all = await listContainers();
   const pending = ids
@@ -573,7 +670,7 @@ export async function updateMany({ ids, trigger = 'manual' } = {}) {
   pending.sort((a, b) => Number(a.isSelf) - Number(b.isSelf));
   for (const c of pending) {
     try {
-      const r = await updateContainer(c.id, { trigger });
+      const r = await updateContainer(c.id, { trigger, log });
       if (r.selfUpdate) summary.selfUpdate = true;
       else summary.updated++;
       summary.items.push({ name: r.name, image: r.image, from: r.from, to: r.to });

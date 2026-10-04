@@ -12,6 +12,7 @@ import { checkIp } from './ipCheck.js';
 import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
+import { startOperation, streamOperation } from './operations.js';
 import * as scheduler from './scheduler.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
@@ -140,6 +141,33 @@ app.post('/api/containers/:id/refresh-icon', handle(async (req) => {
 }));
 app.get('/api/containers/:id/spec', handle((req) => dk.getContainerSpec(req.params.id)));
 app.get('/api/containers/:id/logs/stream', streamLogs);
+
+// --- Updates with live progress (Unraid-style log) ---
+// body: { ids?: string[] } — omitted: every container with an update available
+app.post('/api/operations/update', handle(async (req) => {
+  const ids = req.body?.ids;
+  if (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(String(x))))) {
+    throw Object.assign(new Error('Invalid container ids'), { status: 400 });
+  }
+  const single = ids?.length === 1;
+  const title = single ? 'Updating the container' : 'Updating all containers';
+  const host = await dk.hostName();
+  const id = startOperation(title, async (log) => {
+    const summary = await dk.updateMany({ ids, trigger: 'manual', log });
+    if (!ids && !summary.items.length && !summary.failed.length && !summary.selfUpdate) {
+      log.section('Nothing to update');
+      log.line('Every container is up to date.');
+    }
+    if (summary.items.length) void notify('updated', { items: summary.items, trigger: 'manual', host });
+    if (summary.failed.length) void notify('update-failed', { items: summary.failed, trigger: 'manual', host });
+    return summary;
+  });
+  return { id, title };
+}));
+app.get('/api/operations/:opId/stream', (req, res) => {
+  if (!/^[a-f0-9-]{36}$/.test(req.params.opId)) return res.status(404).end();
+  streamOperation(req, res);
+});
 
 // --- History, templates ---
 app.get('/api/history', handle((req) => listHistory({ container: req.query.container, limit: req.query.limit })));

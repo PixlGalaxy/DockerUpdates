@@ -24,6 +24,7 @@ import ContextMenu, { type MenuItem } from '../components/ContextMenu'
 import HistoryModal from '../components/HistoryModal'
 import LogsModal from '../components/LogsModal'
 import StatsCards, { type Filter } from '../components/StatsCards'
+import UpdateProgressModal from '../components/UpdateProgressModal'
 import type { ToastTone } from '../components/Toasts'
 import { ActionBar, TopBar } from '../components/Toolbar'
 import { useStoredState } from '../hooks'
@@ -35,8 +36,6 @@ import type {
   ContainerInfo,
   ContainerSpec,
   HostInfo,
-  UpdateAllSummary,
-  UpdateResult,
 } from '../types'
 import { isActive } from '../utils'
 
@@ -82,6 +81,16 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [editing, setEditing] = useState<{ id: string; spec: ContainerSpec } | null>(null)
   const [menu, setMenu] = useState<{ container: ContainerInfo; x: number; y: number } | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
+  const [updateOp, setUpdateOp] = useState<{ id: string; title: string } | null>(null)
+
+  /** Opens the live update log (one container, several, or all with an update) */
+  async function startUpdate(ids?: string[]) {
+    try {
+      setUpdateOp(await api.startUpdate(ids))
+    } catch (err) {
+      onError(err)
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -185,17 +194,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
     toast(s.authRequired || s.failed ? 'info' : 'success', `Check finished: ${parts.join(', ')}`)
   }
 
-  function reportUpdate(r: UpdateResult) {
-    if (r.selfUpdate) onSelfUpdate()
-    else toast('success', `${r.name} updated`)
-  }
 
-  function reportUpdateAll(s: UpdateAllSummary) {
-    if (s.updated) toast('success', `${s.updated} container${s.updated === 1 ? '' : 's'} updated`)
-    for (const f of s.failed) toast('error', `${f.name}: ${f.error}`)
-    if (!s.updated && !s.failed.length && !s.selfUpdate) toast('info', 'Nothing to update')
-    if (s.selfUpdate) onSelfUpdate()
-  }
 
   function reportBulk(action: ContainerAction, s: BulkSummary) {
     const n = `${s.affected} container${s.affected === 1 ? '' : 's'}`
@@ -243,7 +242,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Restart', icon: <RotateCw size={15} />, hidden: !isActive(c), separatorBefore: c.isSelf, onSelect: act('restart') },
       { label: 'Edit', icon: <Pencil size={15} />, hidden: c.isSelf, separatorBefore: true, onSelect: () => void openEditor(c.id) },
       { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => withBusy(c.id, () => api.checkUpdate(c.id), reportCheck) },
-      { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => withBusy(c.id, () => api.update(c.id), reportUpdate) },
+      { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => void startUpdate([c.id]) },
       { label: 'Update history', icon: <History size={15} />, onSelect: () => setPanel({ kind: 'history', container: c }) },
       { label: 'Export template', icon: <FileDown size={15} />, onSelect: () => void exportTemplate(c) },
       {
@@ -325,7 +324,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
           withBusy(id, () => api.setAutostart(id, enabled), `Autostart ${enabled ? 'enabled' : 'disabled'} for ${nameOf(id)}`)
         }
         onCheckUpdate={(id) => withBusy(id, () => api.checkUpdate(id), reportCheck)}
-        onUpdate={(id) => withBusy(id, () => api.update(id), reportUpdate)}
+        onUpdate={(id) => void startUpdate([id])}
         onCopy={copy}
       />
 
@@ -335,7 +334,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         onAdd={() => setShowAdd(true)}
         onBulk={(a) => withGlobal(a, () => api.bulk(a), (s) => reportBulk(a, s))}
         onCheckUpdates={() => withGlobal('check', api.checkAllUpdates, reportCheckAll)}
-        onUpdateAll={() => withGlobal('update', api.updateAll, reportUpdateAll)}
+        onUpdateAll={() => void startUpdate()}
       />
 
       {menu && (
@@ -345,6 +344,18 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
           title={menu.container.name}
           items={menuItems(menu.container)}
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {updateOp && (
+        <UpdateProgressModal
+          opId={updateOp.id}
+          title={updateOp.title}
+          onSelfUpdate={onSelfUpdate}
+          onClose={() => {
+            setUpdateOp(null)
+            void refresh()
+          }}
         />
       )}
 
