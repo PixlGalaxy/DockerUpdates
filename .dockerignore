@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+backend/public
+.git
+.gitignore
+.vscode
+.env
+**/.env*
+Dockerfile
+.dockerignore
+*.log
+Readme.txt
+README.md

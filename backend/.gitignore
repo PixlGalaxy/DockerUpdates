@@ -1,0 +1,14 @@
+node_modules/
+
+# Frontend build copied by the Dockerfile
+public/
+
+# Local data
+data/
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
