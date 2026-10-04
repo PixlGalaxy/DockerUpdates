@@ -164,6 +164,12 @@ npm install
 npm run dev
 ```
 
+If you add npm packages on Windows or macOS, regenerate the lockfile on Linux before committing. npm leaves out optional dependencies of other platforms, and `npm ci` in the Docker build then fails with "Missing: ... from lock file":
+
+```bash
+docker run --rm -v "$PWD/frontend:/src" -w /src node:26-alpine npm install --package-lock-only --ignore-scripts
+```
+
 Build the image locally:
 
 ```bash
