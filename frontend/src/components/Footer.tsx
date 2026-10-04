@@ -29,7 +29,7 @@ export default function Footer() {
       </span>
       <span aria-hidden>|</span>
       <a href="https://github.com/PixlGalaxy/DockerUpdates" target="_blank" rel="noreferrer" className={link}>
-        Source Code
+        DockerUpdates Source Code
       </a>
     </footer>
   )
