@@ -11,6 +11,8 @@ export default defineConfig({
         // Keep the browser's Host header (localhost:5173) so it matches the Origin:
         // the backend rejects requests whose Origin is not its own host (CSRF protection).
         changeOrigin: false,
+        // Container console (WebSocket)
+        ws: true,
       },
     },
   },

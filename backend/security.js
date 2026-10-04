@@ -96,6 +96,17 @@ export function sameOriginOnly(req, res, next) {
   next();
 }
 
+/** Origin header matches the Host (or ALLOWED_ORIGINS): used for WebSocket upgrades. */
+export function isSameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    return new URL(origin).host === req.headers.host || ALLOWED_ORIGINS.has(origin);
+  } catch {
+    return false;
+  }
+}
+
 /** Container references accepted by the API (ID or name): blocks path tricks like "../images". */
 export function validContainerRef(req, res, next, value) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(value)) {

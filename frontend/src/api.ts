@@ -6,6 +6,16 @@ import type {
   ContainerAction,
   ContainersResponse,
   ContainerSpec,
+  AutoUpdateStatus,
+  CleanupPreview,
+  CleanupResult,
+  HistoryEntry,
+  HostInfo,
+  RunResult,
+  Schedule,
+  SchedulePreview,
+  Settings,
+  TemplateSummary,
   UpdateAllSummary,
   UpdateResult,
 } from './types'
@@ -71,4 +81,22 @@ export const api = {
   networks: () => request<string[]>('/api/networks'),
   checkExtraParams: (extraParams: string) =>
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
+  host: () => request<HostInfo>('/api/host'),
+
+  history: (container?: string) =>
+    request<HistoryEntry[]>(`/api/history${container ? `?container=${encodeURIComponent(container)}` : ''}`),
+  templates: () => request<TemplateSummary[]>('/api/templates'),
+  template: (name: string) => request<ContainerSpec>(`/api/templates/${encodeURIComponent(name)}`),
+  deleteTemplate: (name: string) => request<Ok>(`/api/templates/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  settings: () => request<Settings>('/api/settings'),
+  saveSettings: (patch: Partial<Settings>) =>
+    request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  testNotification: (channel: string) => post<Ok>(`/api/settings/test/${channel}`),
+  timezones: () => request<string[]>('/api/timezones'),
+  autoUpdateStatus: () => request<AutoUpdateStatus>('/api/auto-update/status'),
+  runAutoUpdate: () => post<RunResult>('/api/auto-update/run'),
+  previewSchedule: (schedule: Schedule) => post<SchedulePreview>('/api/schedule/preview', schedule),
+  cleanupPreview: (mode?: string) => request<CleanupPreview>(`/api/cleanup/preview${mode ? `?mode=${mode}` : ''}`),
+  runCleanup: () => post<CleanupResult>('/api/cleanup/run'),
 }

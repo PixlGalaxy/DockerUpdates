@@ -8,20 +8,13 @@ import {
   HardDrive,
   LoaderCircle,
   LockKeyhole,
-  Pause,
-  Pencil,
-  Play,
   RefreshCw,
-  RotateCw,
   ShieldCheck,
-  Square,
-  Trash2,
   TriangleAlert,
 } from 'lucide-react'
-import { useState } from 'react'
-import type { ContainerAction, ContainerInfo } from '../types'
+import { useState, type MouseEvent } from 'react'
+import type { ContainerInfo } from '../types'
 import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
-import RowMenu from './RowMenu'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
 
 interface Props {
@@ -29,13 +22,12 @@ interface Props {
   hostIp: string
   advanced: boolean
   busy: boolean
-  onAction: (action: ContainerAction) => void
-  onRemove: () => void
+  /** Opens the container menu at the given screen position */
+  onMenu: (x: number, y: number) => void
   onAutostart: (enabled: boolean) => void
   onCheckUpdate: () => void
   onUpdate: () => void
   onCopy: (text: string) => void
-  onEdit: () => void
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -48,19 +40,18 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
 }
 
 const td = 'px-4 py-3.5 align-middle'
+const badge = 'inline-flex items-center gap-1.5 rounded-full whitespace-nowrap px-2 py-0.5 text-xs font-medium'
 
 export default function ContainerRow({
   container: c,
   hostIp,
   advanced,
   busy,
-  onAction,
-  onRemove,
+  onMenu,
   onAutostart,
   onCheckUpdate,
   onUpdate,
   onCopy,
-  onEdit,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [iconFailed, setIconFailed] = useState(false)
@@ -70,19 +61,36 @@ export default function ContainerRow({
   // Prefer the limit configured on the container; otherwise Docker reports the host RAM
   const memLimit = c.memLimitConfigured || c.memLimit
   const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
-  const visibleVolumes = expanded ? c.volumes : c.volumes.slice(0, 2)
-  const confirmRemove = () => {
-    if (confirm(`Remove container "${c.name}"? This cannot be undone.`)) onRemove()
+  const visibleVolumes = expanded ? c.volumes : c.volumes.slice(0, 3)
+  const hostNet = c.network === 'host'
+  const published = c.ports.filter((p) => p.hostPort)
+
+  const openMenuHere = (e: MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    onMenu(r.left, r.bottom + 4)
   }
 
   return (
-    <tr className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''}`}>
+    <tr
+      onContextMenu={(e) => {
+        // Keep the native menu on links and text fields
+        if ((e.target as HTMLElement).closest('a, input, textarea')) return
+        e.preventDefault()
+        onMenu(e.clientX, e.clientY)
+      }}
+      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''}`}
+    >
       {/* Application */}
       <td className={td}>
         <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={openMenuHere}
+            title="Actions (or right-click the row)"
+            className="relative shrink-0 rounded-xl focus-visible:outline-2 focus-visible:outline-sky-500"
+          >
             {c.icon && !iconFailed ? (
-              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm">
+              <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm transition-transform group-hover:scale-105">
                 <img
                   src={c.icon}
                   alt=""
@@ -93,7 +101,7 @@ export default function ContainerRow({
               </div>
             ) : (
               <div
-                className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm ${gradientFor(c.name)}`}
+                className={`flex size-10 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-semibold text-white uppercase shadow-sm transition-transform group-hover:scale-105 ${gradientFor(c.name)}`}
               >
                 {c.name.slice(0, 2)}
               </div>
@@ -106,10 +114,12 @@ export default function ContainerRow({
                 <ShieldCheck size={11} />
               </span>
             )}
-          </div>
+          </button>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="truncate font-semibold">{c.name}</span>
+              <button type="button" onClick={openMenuHere} className="truncate text-left font-semibold hover:text-sky-600 dark:hover:text-sky-400">
+                {c.name}
+              </button>
               <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${state.text}`}>
                 <span className="relative flex size-2">
                   {state.pulse && (
@@ -140,48 +150,40 @@ export default function ContainerRow({
       <td className={td}>
         <div className="flex flex-col items-start gap-1.5">
           {busy ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400">
+            <span className={`${badge} bg-sky-500/10 text-sky-600 dark:text-sky-400`}>
               <LoaderCircle size={12} className="animate-spin" /> Working…
             </span>
           ) : c.updateStatus === 'up-to-date' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <span className={`${badge} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
               <CircleCheck size={12} /> Up to date
             </span>
           ) : c.updateStatus === 'update-available' ? (
-            <Button variant="warning" size="xs" icon={<CloudDownload size={13} />} onClick={onUpdate}>
+            <Button variant="update" size="xs" icon={<CloudDownload size={13} />} onClick={onUpdate}>
               Update available
             </Button>
           ) : c.updateStatus === 'auth-required' ? (
-            <span
-              title={c.updateMessage}
-              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400"
-            >
+            <span title={c.updateMessage} className={`${badge} cursor-help bg-red-500/10 text-red-600 dark:text-red-400`}>
               <LockKeyhole size={12} /> Auth required
             </span>
           ) : c.updateStatus === 'local' ? (
             <span
               title={c.updateMessage ?? 'Local image ID, there is no registry to check'}
-              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-muted"
+              className={`${badge} cursor-help bg-zinc-500/10 text-muted`}
             >
               <HardDrive size={12} /> Local image
             </span>
           ) : c.updateStatus === 'error' ? (
-            <span
-              title={c.updateMessage}
-              className="inline-flex cursor-help items-center gap-1.5 rounded-full whitespace-nowrap bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-            >
+            <span title={c.updateMessage} className={`${badge} cursor-help bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
               <TriangleAlert size={12} /> Check failed
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap bg-zinc-500/10 px-2 py-0.5 text-xs font-medium text-muted">
+            <span className={`${badge} bg-zinc-500/10 text-muted`}>
               <CircleDashed size={12} /> Not checked
             </span>
           )}
           <div className="flex items-center gap-1">
             {c.updateStatus === 'update-available' && c.updateFrom && c.updateTo ? (
-              <Chip
-                className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              >
+              <Chip className="border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300">
                 <span
                   title={`${tag}: ${c.updateKind === 'version' ? 'version' : c.updateKind === 'revision' ? 'commit' : 'image ID'} ${c.updateFrom} → ${c.updateTo}`}
                   className="inline-flex items-center gap-1"
@@ -211,46 +213,59 @@ export default function ContainerRow({
           <td className={td}>
             <Chip className="font-sans text-xs">{c.network}</Chip>
           </td>
-          <td className={`${td} font-mono text-xs`}>
-            <div>{c.ip || <span className="text-muted">—</span>}</div>
+          <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+            <div>{c.ip || (hostNet ? hostIp : <span className="text-muted">—</span>)}</div>
             {c.mac && <div className="mt-0.5 text-[11px] text-muted">{c.mac}</div>}
           </td>
         </>
       )}
 
-      {/* Ports */}
-      <td className={td}>
-        {c.ports.length === 0 ? (
-          <span className="text-xs text-muted">{c.network === 'host' ? 'Host network' : '—'}</span>
+      {/* Container port */}
+      <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+        {hostNet ? (
+          <span className="text-muted">all</span>
+        ) : c.ports.length === 0 ? (
+          <span className="text-muted">—</span>
         ) : (
-          <div className="flex max-w-56 flex-wrap gap-1">
-            {c.ports.map((p) =>
-              p.hostPort ? (
+          c.ports.map((p) => (
+            <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
+              {p.containerPort}:{p.protocol.toUpperCase()}
+            </div>
+          ))
+        )}
+      </td>
+
+      {/* LAN IP:Port */}
+      <td className={`${td} font-mono text-xs whitespace-nowrap`}>
+        {hostNet ? (
+          <span>{hostIp}</span>
+        ) : published.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          published.map((p) => (
+            <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
+              {p.protocol === 'tcp' ? (
                 <a
-                  key={`${p.containerPort}/${p.protocol}`}
                   href={`http://${hostIp}:${p.hostPort}`}
                   target="_blank"
                   rel="noreferrer"
-                  title={`${hostIp}:${p.hostPort} → ${p.containerPort}/${p.protocol}`}
-                  className="inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[11px] text-sky-700 transition-colors hover:bg-sky-500/20 dark:text-sky-300"
+                  className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
                 >
-                  {p.hostPort}
-                  <span className="text-sky-700/50 dark:text-sky-300/50">→</span>
-                  {p.containerPort}/{p.protocol}
-                  <ArrowUpRight size={11} />
+                  {hostIp}:{p.hostPort}
+                  <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
                 </a>
               ) : (
-                <Chip key={`${p.containerPort}/${p.protocol}`}>
-                  {p.containerPort}/{p.protocol}
-                </Chip>
-              ),
-            )}
-          </div>
+                <span>
+                  {hostIp}:{p.hostPort}
+                </span>
+              )}
+            </div>
+          ))
         )}
       </td>
 
       {advanced && (
-        <td className={`${td} max-w-sm`}>
+        <td className={`${td} min-w-72`}>
           {c.volumes.length === 0 ? (
             <span className="text-xs text-muted">—</span>
           ) : (
@@ -262,13 +277,13 @@ export default function ContainerRow({
                   <span className="text-muted">{v.host}</span>
                 </div>
               ))}
-              {c.volumes.length > 2 && (
+              {c.volumes.length > 3 && (
                 <button
                   type="button"
                   onClick={() => setExpanded((e) => !e)}
                   className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
                 >
-                  {expanded ? 'Show less' : `+${c.volumes.length - 2} more`}
+                  {expanded ? 'Show less' : `+${c.volumes.length - 3} more`}
                   <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
                 </button>
               )}
@@ -297,14 +312,14 @@ export default function ContainerRow({
                 <span className="font-medium tabular-nums">
                   {formatBytes(c.memUsage)}
                   {c.memLimitConfigured > 0 ? (
-                    <span className="text-muted" title="Memory limit configured on the container (--memory)">
+                    <span className="text-muted" title="Memory limit configured on the container">
                       {' '}
                       / {formatBytes(c.memLimitConfigured)}
                     </span>
                   ) : (
                     <span
                       className="text-muted"
-                      title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one with --memory in Edit → Extra parameters.`}
+                      title={`No memory limit: can use all host RAM${c.memLimit ? ` (${formatBytes(c.memLimit)})` : ''}. Set one in Edit.`}
                     >
                       {' '}
                       / no limit
@@ -329,48 +344,6 @@ export default function ContainerRow({
       <td className={`${td} text-xs whitespace-nowrap`}>
         <div className="font-medium">{active && c.startedAt ? timeAgo(c.startedAt) : '—'}</div>
         <div className="mt-0.5 text-muted">Created {timeAgo(c.createdAt)} ago</div>
-      </td>
-
-      {/* Actions */}
-      <td className={`${td} text-right`}>
-        <div className="flex items-center justify-end gap-0.5">
-          {c.state === 'running' ? (
-            <IconButton
-              label={c.isSelf ? 'DockerUpdates cannot stop itself' : 'Stop'}
-              tone="danger"
-              disabled={busy || c.isSelf}
-              onClick={() => onAction('stop')}
-            >
-              <Square size={15} />
-            </IconButton>
-          ) : c.state === 'paused' ? (
-            <IconButton label="Resume" tone="success" disabled={busy} onClick={() => onAction('unpause')}>
-              <Play size={15} />
-            </IconButton>
-          ) : (
-            <IconButton label="Start" tone="success" disabled={busy} onClick={() => onAction('start')}>
-              <Play size={15} />
-            </IconButton>
-          )}
-          <IconButton label="Restart" disabled={busy || !active} onClick={() => onAction('restart')}>
-            <RotateCw size={15} />
-          </IconButton>
-          {!c.isSelf && (
-            <IconButton label="Edit" disabled={busy} onClick={onEdit}>
-              <Pencil size={15} />
-            </IconButton>
-          )}
-          <RowMenu
-            items={[
-              { label: 'Pause', icon: <Pause size={15} />, onSelect: () => onAction('pause'), hidden: c.state !== 'running' || c.isSelf },
-              { label: 'Edit', icon: <Pencil size={15} />, onSelect: onEdit, hidden: c.isSelf },
-              { label: 'Check for update', icon: <RefreshCw size={15} />, onSelect: onCheckUpdate, hidden: c.updateStatus === 'local' },
-              { label: 'Force update', icon: <CloudDownload size={15} />, onSelect: onUpdate, hidden: c.updateStatus === 'local' },
-              { label: 'Copy ID', icon: <Copy size={15} />, onSelect: () => onCopy(c.id) },
-              { label: 'Remove', icon: <Trash2 size={15} />, onSelect: confirmRemove, danger: true, separatorBefore: true, hidden: c.isSelf },
-            ]}
-          />
-        </div>
       </td>
     </tr>
   )

@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react'
 
-type Variant = 'primary' | 'secondary' | 'warning' | 'ghost' | 'danger'
+type Variant = 'primary' | 'secondary' | 'warning' | 'update' | 'ghost' | 'danger'
 type Size = 'xs' | 'sm' | 'md'
 
 const VARIANTS: Record<Variant, string> = {
@@ -9,6 +9,8 @@ const VARIANTS: Record<Variant, string> = {
     'bg-sky-600 text-white shadow-sm shadow-sky-600/25 hover:bg-sky-500 focus-visible:outline-sky-500',
   secondary:
     'border border-line bg-surface text-fg shadow-xs hover:bg-surface-2 focus-visible:outline-sky-500',
+  update:
+    'bg-violet-600 text-white shadow-sm shadow-violet-600/25 hover:bg-violet-500 focus-visible:outline-violet-500',
   warning:
     'bg-amber-500 text-white shadow-sm shadow-amber-500/25 hover:bg-amber-400 focus-visible:outline-amber-500',
   ghost: 'text-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-sky-500',

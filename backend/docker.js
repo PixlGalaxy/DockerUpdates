@@ -3,9 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import { buildCreateOptions, specFromInspect, validateSpec } from './containerSpec.js';
 import { describeExtraParams } from './extraParams.js';
+import { addHistory, renameInHistory } from './history.js';
 import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
+import { getSettings } from './settings.js';
 import { cachedStats, getStats, initStats, parseSample } from './stats.js';
+import { saveTemplate } from './templates.js';
 
 // Connection: DOCKER_HOST (tcp/ssh/npipe) > DOCKER_SOCKET > platform default.
 // Linux/macOS: unix socket. Windows (Docker Desktop): named pipe.
@@ -98,6 +101,21 @@ export async function hostName() {
   return hostNameCache.value ?? os.hostname();
 }
 
+/** Docker host summary (header, memory slider max). */
+export async function hostInfo() {
+  const info = await docker.info();
+  return {
+    name: process.env.HOST_NAME || info.Name,
+    ip: hostIp(),
+    memTotal: info.MemTotal,
+    cpus: info.NCPU,
+    os: info.OperatingSystem,
+    dockerVersion: info.ServerVersion,
+    containers: info.Containers,
+    images: info.Images,
+  };
+}
+
 async function stats(id) {
   const cached = cachedStats(id);
   if (cached) return cached;
@@ -161,6 +179,7 @@ export async function listContainers() {
             ? inspect.HostConfig.CpuQuota / (inspect.HostConfig.CpuPeriod || 100000)
             : 0,
         icon: iconUrlFor(inspect.Config.Image),
+        projectUrl: projectUrl(inspect.Config.Labels),
         _discover: {
           image: inspect.Config.Image,
           labels: inspect.Config.Labels,
@@ -173,6 +192,14 @@ export async function listContainers() {
   // Look for favicons in the background for containers without an icon
   void discoverIcons(result.map((c) => c._discover));
   return result.map(({ _discover, ...c }) => c);
+}
+
+/** Project page from OCI / Unraid labels (shown as "Project page" in the context menu). */
+function projectUrl(labels = {}) {
+  const url = labels?.['org.opencontainers.image.source']
+    || labels?.['org.opencontainers.image.url']
+    || labels?.['net.unraid.docker.webui.project'];
+  return /^https?:\/\//.test(url ?? '') ? url : undefined;
 }
 
 /** Base URLs where a container's web UI might answer (used to find its favicon). */
@@ -278,7 +305,7 @@ export async function checkUpdate(id) {
     }
   }
   updateStatus.set(name, result);
-  return { name, ...result };
+  return { name, image, ...result };
 }
 
 const LABEL_VERSION = 'org.opencontainers.image.version';
@@ -367,7 +394,7 @@ export async function recreateContainer(id, buildOptions) {
     throw httpError(409, `A container named "${newName}" already exists`);
   }
 
-  if (wasRunning) await old.stop();
+  if (wasRunning) await old.stop({ t: stopTimeout() });
   await old.rename({ name: `${name}_old` });
 
   let created;
@@ -396,6 +423,14 @@ export async function recreateContainer(id, buildOptions) {
 
   await old.remove();
   return newName;
+}
+
+function stopTimeout() {
+  try {
+    return getSettings().autoUpdate.stopTimeout;
+  } catch {
+    return 15;
+  }
 }
 
 async function exists(name) {
@@ -432,48 +467,133 @@ function sameOptions(inspect, config) {
   };
 }
 
-/** Pulls the latest image and recreates the container. Self-updates go through a helper container. */
-export async function updateContainer(id) {
+/**
+ * Pulls the latest image and recreates the container. Self-updates go through a helper container.
+ * Every attempt is recorded in the update history. Returns { name, image, from, to, selfUpdate }.
+ */
+export async function updateContainer(id, { trigger = 'manual' } = {}) {
   const inspect = await docker.getContainer(id).inspect();
   const name = cleanName(inspect.Name);
+  const image = inspect.Config.Image;
+  const started = Date.now();
+  let change = {};
 
-  if (isLocalImageRef(inspect.Config.Image)) {
-    throw httpError(400, `${name} uses a local image ID and cannot be updated from a registry.`);
-  }
+  const record = (result, extra = {}) => addHistory({
+    container: name, image, ...change, trigger, result, durationMs: Date.now() - started, ...extra,
+  }).catch((e) => console.error('Could not save history:', e.message));
 
-  // Pull first: if it fails (e.g. auth) the container is left untouched.
   try {
-    await pull(inspect.Config.Image);
+    if (isLocalImageRef(image)) {
+      throw httpError(400, `${name} uses a local image ID and cannot be updated from a registry.`);
+    }
+    // Pull first: if it fails (e.g. auth) the container is left untouched.
+    try {
+      await pull(image);
+    } catch (err) {
+      if (err.auth) updateStatus.set(name, { status: 'auth-required', message: err.message });
+      throw err;
+    }
+    const latest = await docker.getImage(image).inspect();
+    const current = await docker.getImage(inspect.Image).inspect().catch(() => ({ Id: inspect.Image }));
+    change = latest.Id === inspect.Image
+      ? { from: versionChange(current, latest).from, to: versionChange(current, latest).from, kind: 'reinstall' }
+      : versionChange(current, latest);
+
+    if (await isSelf(id)) {
+      await scheduleSelfUpdate(inspect);
+      await record('scheduled');
+      return { name, image, ...change, selfUpdate: true };
+    }
+
+    await recreateContainer(id);
+    updateStatus.set(name, { status: 'up-to-date' });
+    await record('success');
+    if (latest.Id !== inspect.Image) await removeOldImage(inspect.Image);
+    return { name, image, ...change, selfUpdate: false };
   } catch (err) {
-    if (err.auth) updateStatus.set(name, { status: 'auth-required', message: err.message });
+    await record('failed', { error: err.message });
     throw err;
   }
-
-  if (await isSelf(id)) {
-    await scheduleSelfUpdate(inspect);
-    return { name, selfUpdate: true };
-  }
-
-  await recreateContainer(id);
-  updateStatus.set(name, { status: 'up-to-date' });
-  return { name, selfUpdate: false };
 }
 
-export async function updateAll() {
-  const summary = { updated: 0, failed: [], selfUpdate: false };
-  const pending = (await listContainers()).filter((c) => c.updateStatus === 'update-available');
-  // DockerUpdates itself goes last: its update restarts this process.
+/** Deletes the image a container used before an update (if enabled and nothing else uses it). */
+async function removeOldImage(imageId) {
+  try {
+    if (!getSettings().cleanup.removeOldImageAfterUpdate) return;
+    await docker.getImage(imageId).remove();
+  } catch {
+    // still used by another container / already gone
+  }
+}
+
+/**
+ * Updates the given containers (default: every one with an update available).
+ * DockerUpdates itself always goes last because its update restarts this process.
+ */
+export async function updateMany({ ids, trigger = 'manual' } = {}) {
+  const summary = { updated: 0, failed: [], selfUpdate: false, items: [] };
+  const all = await listContainers();
+  const pending = ids
+    ? all.filter((c) => ids.includes(c.id))
+    : all.filter((c) => c.updateStatus === 'update-available');
   pending.sort((a, b) => Number(a.isSelf) - Number(b.isSelf));
   for (const c of pending) {
     try {
-      const r = await updateContainer(c.id);
+      const r = await updateContainer(c.id, { trigger });
       if (r.selfUpdate) summary.selfUpdate = true;
       else summary.updated++;
+      summary.items.push({ name: r.name, image: r.image, from: r.from, to: r.to });
     } catch (err) {
-      summary.failed.push({ name: c.name, error: err.message });
+      summary.failed.push({ name: c.name, image: c.image, error: err.message });
     }
   }
   return summary;
+}
+
+export const updateAll = () => updateMany();
+
+// ---------- Image cleanup ----------
+
+/** Images that a cleanup would remove: { images: [{ id, tags, size }], size } */
+export async function cleanupPreview(mode = getSettings().cleanup.mode) {
+  const [images, containers] = await Promise.all([
+    docker.listImages({ all: false }),
+    docker.listContainers({ all: true }),
+  ]);
+  const used = new Set(containers.map((c) => c.ImageID));
+  const candidates = images.filter((img) => {
+    if (used.has(img.Id)) return false;
+    const dangling = !img.RepoTags?.length || img.RepoTags.every((t) => t === '<none>:<none>');
+    return mode === 'unused' || dangling;
+  });
+  return {
+    mode,
+    images: candidates.map((img) => ({
+      id: img.Id.replace(/^sha256:/, '').slice(0, 12),
+      tags: (img.RepoTags ?? []).filter((t) => t !== '<none>:<none>'),
+      size: img.Size,
+      created: new Date(img.Created * 1000).toISOString(),
+    })),
+    size: candidates.reduce((sum, img) => sum + img.Size, 0),
+  };
+}
+
+/** Removes the images listed by cleanupPreview. Returns { count, freed, failed }. */
+export async function runCleanup(mode = getSettings().cleanup.mode) {
+  const preview = await cleanupPreview(mode);
+  let count = 0;
+  let freed = 0;
+  const failed = [];
+  for (const img of preview.images) {
+    try {
+      await docker.getImage(img.id).remove({ force: false });
+      count++;
+      freed += img.size;
+    } catch (err) {
+      failed.push({ id: img.id, error: err.json?.message ?? err.message });
+    }
+  }
+  return { mode, count, freed, failed };
 }
 
 // ---------- Self-update ----------
@@ -553,8 +673,11 @@ export async function editContainer(id, spec) {
 
   if (next.image !== current.Config.Image) await pull(next.image);
 
+  const oldName = cleanName(current.Name);
   const name = await recreateContainer(id, (base) => buildCreateOptions(next, base));
-  updateStatus.delete(cleanName(current.Name));
+  updateStatus.delete(oldName);
+  if (name !== oldName) await renameInHistory(oldName, name);
+  await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
   return { name };
 }
 
@@ -564,6 +687,8 @@ export async function createContainer(spec) {
   if (await exists(next.name)) throw httpError(409, `A container named "${next.name}" already exists`);
   if (spec.iconUrl) await setCustomIcon(next.image, spec.iconUrl);
   await pull(next.image);
+  // Saved before starting: if the container fails, it can be re-created from Templates
+  await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
   const container = await docker.createContainer(options);
   await container.start();
   return container.id;

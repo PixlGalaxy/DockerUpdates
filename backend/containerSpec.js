@@ -51,7 +51,9 @@ export function specFromInspect(inspect, config, { logDriver } = {}) {
     ports,
     volumes,
     env,
-    extraParams: serializeExtraParams(config, host, { logDriver }),
+    // Memory limit has its own slider in the form, so it is not repeated in Extra parameters
+    memory: host.Memory || 0,
+    extraParams: serializeExtraParams(config, host, { logDriver, skipMemory: true }),
   };
 }
 
@@ -84,6 +86,10 @@ export function validateSpec(spec) {
     if (!v.host || !v.container) throw bad('Each volume needs both a host path and a container path');
     if (!String(v.container).startsWith('/')) throw bad(`Container path "${v.container}" must be absolute`);
   }
+  if (spec.memory !== undefined && (!Number.isFinite(Number(spec.memory)) || Number(spec.memory) < 0)) {
+    throw bad('Invalid memory limit');
+  }
+  if (Number(spec.memory) > 0 && Number(spec.memory) < 6 * 1024 ** 2) throw bad('Memory limit must be at least 6 MB');
   for (const e of spec.env ?? []) {
     if (e.key && !/^[^=\s]+$/.test(e.key)) throw bad(`Invalid environment variable name "${e.key}"`);
   }
@@ -124,6 +130,8 @@ export function buildCreateOptions(spec, base = null) {
   config.ExposedPorts = exposed;
 
   const host = { ...(base?.hostConfig ?? {}), ...extra.host };
+  // --memory in Extra parameters wins over the slider
+  if (!host.Memory && Number(spec.memory) > 0) host.Memory = Math.round(Number(spec.memory));
   host.PortBindings = bindings;
   host.Binds = (spec.volumes ?? [])
     .filter((v) => v.host && v.container)

@@ -36,3 +36,33 @@ export function useTheme() {
 
   return [theme, setTheme] as const
 }
+
+// ---------- Minimal router (History API; the backend serves index.html for any path) ----------
+
+export type Page = 'home' | 'auto-update' | 'settings'
+
+const PATHS: Record<Page, string> = { home: '/', 'auto-update': '/auto-update', settings: '/settings' }
+
+function pageFromPath(): Page {
+  const entry = Object.entries(PATHS).find(([, path]) => path !== '/' && location.pathname.startsWith(path))
+  return (entry?.[0] as Page) ?? 'home'
+}
+
+export function usePage() {
+  const [page, setPage] = useState<Page>(pageFromPath)
+
+  useEffect(() => {
+    const onPop = () => setPage(pageFromPath())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const navigate = (next: Page) => {
+    if (next === page) return
+    history.pushState(null, '', PATHS[next])
+    setPage(next)
+    window.scrollTo({ top: 0 })
+  }
+
+  return [page, navigate] as const
+}

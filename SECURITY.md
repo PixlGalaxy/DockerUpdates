@@ -36,7 +36,9 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 
 - It needs the Docker socket (`/var/run/docker.sock`), which grants full control of the host. Anyone who logs in can start privileged containers.
 - There is one account, defined by `ADMIN_USER` / `ADMIN_PASSWORD` in the `.env` file. The password is never stored by the app.
-- Sessions are kept in memory, are revocable on logout, expire after `SESSION_IDLE_MINUTES` of inactivity (default 120) or `SESSION_HOURS` (default 12), and are all cleared when the container restarts.
+- Sessions are revocable on logout and expire after `SESSION_IDLE_MINUTES` of inactivity (default 120) or `SESSION_HOURS` (default 12). They are persisted in the data volume so updates do not log you out; only a SHA-256 hash of each session id is stored, and changing `ADMIN_USER`, `ADMIN_PASSWORD` or `SESSION_SECRET` invalidates all of them.
+- The container console runs a shell inside containers (`docker exec`). It uses a WebSocket that requires a valid session and an `Origin` matching the app, and every console session is written to the audit log.
+- Notification secrets (webhook URLs, bot tokens) are stored in the data volume and never sent back to the browser in clear text.
 
 ### Built-in protections
 

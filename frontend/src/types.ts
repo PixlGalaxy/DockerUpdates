@@ -49,6 +49,8 @@ export interface ContainerInfo {
   updateFrom?: string
   updateTo?: string
   updateKind?: 'version' | 'revision' | 'image'
+  /** Source / project page from the image labels */
+  projectUrl?: string
   /** This is DockerUpdates' own container */
   isSelf: boolean
   /** Memory limit set on the container (0 = no limit) */
@@ -125,4 +127,130 @@ export interface ContainerSpec {
   extraParams: string
   /** Custom icon for the image repository ('' = automatic favicon) */
   iconUrl: string
+  /** Memory limit in bytes (0 = no limit) */
+  memory: number
+}
+
+export interface HostInfo {
+  name: string
+  ip: string
+  memTotal: number
+  cpus: number
+  os: string
+  dockerVersion: string
+}
+
+// ---------- Auto-update / settings ----------
+
+export type Frequency = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom'
+export type AutoAction = 'update' | 'notify'
+
+export interface Schedule {
+  frequency: Frequency
+  minute: number
+  hour: number
+  dayOfWeek: number
+  dayOfMonth: number
+  cron: string
+}
+
+export interface ContainerAutoUpdate {
+  mode: 'global' | 'custom' | 'off'
+  action?: AutoAction
+  schedule?: Schedule
+}
+
+export interface Settings {
+  timezone: string
+  autoUpdate: {
+    enabled: boolean
+    action: AutoAction
+    schedule: Schedule
+    applyToAll: boolean
+    stopTimeout: number
+    containers: Record<string, ContainerAutoUpdate>
+  }
+  notifications: {
+    events: { updateAvailable: boolean; updated: boolean; updateFailed: boolean; cleanup: boolean }
+    includeManual: boolean
+    discord: { enabled: boolean; webhookUrl: string; mention: string }
+    telegram: { enabled: boolean; botToken: string; chatId: string }
+    ntfy: { enabled: boolean; url: string; token: string }
+    webhook: { enabled: boolean; url: string; secret: string }
+  }
+  cleanup: {
+    removeOldImageAfterUpdate: boolean
+    scheduled: boolean
+    schedule: Schedule
+    mode: 'dangling' | 'unused'
+  }
+}
+
+export interface RunResult {
+  at: string
+  trigger: 'auto' | 'manual'
+  checked: number
+  available: number
+  updated: number
+  failed: number
+}
+
+export interface AutoUpdateStatus {
+  timezone: string
+  running: { label: string; since: string } | null
+  queued: number
+  lastRun: RunResult | null
+  lastCleanup: { at: string; count: number; freed: number } | null
+  nextRun: string | null
+  nextCleanup: string | null
+  containers: {
+    id: string
+    name: string
+    image: string
+    icon?: string
+    isSelf: boolean
+    local: boolean
+    mode: 'global' | 'custom' | 'off'
+    action: AutoAction | null
+    nextRun: string | null
+  }[]
+}
+
+export interface SchedulePreview {
+  cron: string
+  timezone: string
+  next: string[]
+}
+
+export interface CleanupPreview {
+  mode: 'dangling' | 'unused'
+  images: { id: string; tags: string[]; size: number; created: string }[]
+  size: number
+}
+
+export interface CleanupResult {
+  count: number
+  freed: number
+  failed: { id: string; error: string }[]
+}
+
+export interface HistoryEntry {
+  id: string
+  at: string
+  type: 'update' | 'edit'
+  container: string
+  image: string
+  from?: string
+  to?: string
+  kind?: 'version' | 'revision' | 'image' | 'reinstall'
+  trigger: 'manual' | 'auto'
+  result: 'success' | 'failed' | 'scheduled'
+  error?: string
+  durationMs?: number
+}
+
+export interface TemplateSummary {
+  name: string
+  image: string
+  savedAt: string
 }

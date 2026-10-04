@@ -1,11 +1,20 @@
 import express from 'express';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as auth from './auth.js';
+import { attachConsole } from './console.js';
 import * as dk from './docker.js';
+import { listHistory } from './history.js';
+import { streamLogs } from './logs.js';
+import { notify, testChannel } from './notify.js';
+import * as scheduler from './scheduler.js';
+import { loadSettings, publicSettings, updateSettings } from './settings.js';
+import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
 import { iconFile, initIcons } from './icons.js';
 import {
   auditLog,
+  isSameOrigin,
   permissionsPolicy,
   sameOriginOnly,
   securityHeaders,
@@ -63,6 +72,7 @@ app.get('/api/containers', handle(async () => ({
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));
 // Live CPU / memory, polled every second by the UI
 app.get('/api/stats', handle(() => dk.getStats()));
+app.get('/api/host', handle(() => dk.hostInfo()));
 app.get('/api/networks', handle(() => dk.listNetworks()));
 app.post('/api/extra-params/check', handle((req) => dk.checkExtraParams(req.body?.extraParams ?? '')));
 
@@ -83,7 +93,13 @@ app.get('/api/icons/:key', async (req, res) => {
 
 // Fixed routes before the ones taking :id
 app.post('/api/containers/check-updates', handle(() => dk.checkAllUpdates()));
-app.post('/api/containers/update-all', handle(() => dk.updateAll()));
+app.post('/api/containers/update-all', handle(async () => {
+  const summary = await dk.updateAll();
+  const host = await dk.hostName();
+  if (summary.items.length) void notify('updated', { items: summary.items, trigger: 'manual', host });
+  if (summary.failed.length) void notify('update-failed', { items: summary.failed, trigger: 'manual', host });
+  return summary;
+}));
 app.post('/api/containers/bulk/:action', handle((req) => dk.bulk(req.params.action)));
 
 app.post('/api/containers/:id/autostart', handle(async (req) => {
@@ -91,12 +107,43 @@ app.post('/api/containers/:id/autostart', handle(async (req) => {
   return ok;
 }));
 app.post('/api/containers/:id/check-update', handle((req) => dk.checkUpdate(req.params.id)));
-app.post('/api/containers/:id/update', handle((req) => dk.updateContainer(req.params.id)));
+app.post('/api/containers/:id/update', handle(async (req) => {
+  const host = await dk.hostName();
+  try {
+    const r = await dk.updateContainer(req.params.id);
+    if (!r.selfUpdate) void notify('updated', { items: [r], trigger: 'manual', host });
+    return r;
+  } catch (err) {
+    void notify('update-failed', { items: [{ name: req.params.id, error: err.message }], trigger: 'manual', host });
+    throw err;
+  }
+}));
 app.post('/api/containers/:id/:action', handle(async (req) => {
   await dk.doAction(req.params.id, req.params.action);
   return ok;
 }));
 app.get('/api/containers/:id/spec', handle((req) => dk.getContainerSpec(req.params.id)));
+app.get('/api/containers/:id/logs/stream', streamLogs);
+
+// --- History, templates ---
+app.get('/api/history', handle((req) => listHistory({ container: req.query.container, limit: req.query.limit })));
+app.get('/api/templates', handle(() => listTemplates()));
+app.get('/api/templates/:name', handle((req) => getTemplate(req.params.name)));
+app.delete('/api/templates/:name', handle(async (req) => { await deleteTemplate(req.params.name); return ok; }));
+
+// --- Settings, auto-update, cleanup ---
+app.get('/api/settings', handle(() => publicSettings()));
+app.put('/api/settings', handle((req) => updateSettings(req.body ?? {})));
+app.post('/api/settings/test/:channel', handle(async (req) => {
+  await testChannel(req.params.channel, await dk.hostName());
+  return ok;
+}));
+app.get('/api/timezones', handle(() => Intl.supportedValuesOf('timeZone')));
+app.get('/api/auto-update/status', handle(() => scheduler.status()));
+app.post('/api/auto-update/run', handle(() => scheduler.runNow()));
+app.post('/api/schedule/preview', handle((req) => scheduler.previewSchedule(req.body ?? {})));
+app.get('/api/cleanup/preview', handle((req) => dk.cleanupPreview(req.query.mode)));
+app.post('/api/cleanup/run', handle(() => scheduler.cleanupNow()));
 app.put('/api/containers/:id', handle((req) => dk.editContainer(req.params.id, req.body)));
 app.delete('/api/containers/:id', handle(async (req) => { await dk.removeContainer(req.params.id); return ok; }));
 
@@ -119,5 +166,13 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message });
 });
 
-await initIcons();
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+await Promise.all([initIcons(), loadSettings()]);
+await scheduler.startScheduler();
+
+const server = http.createServer(app);
+attachConsole(server, {
+  userFor: auth.userFor,
+  sameOrigin: isSameOrigin,
+  clientIp: (req) => req.socket.remoteAddress,
+});
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

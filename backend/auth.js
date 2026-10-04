@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readJson, writeJson } from './store.js';
 
 const COOKIE = 'du_session';
 const SESSION_HOURS = Number(process.env.SESSION_HOURS) || 12;
@@ -48,7 +49,7 @@ const sign = (data) => crypto.createHmac('sha256', SECRET).update(data).digest('
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function audit(req, message) {
-  console.log(`[audit] ${new Date().toISOString()} ip=${req.ip} ${message}`);
+  console.log(`[audit] ${new Date().toISOString()} ip=${req.ip ?? req.socket?.remoteAddress} ${message}`);
 }
 
 function readCookie(req, name) {
@@ -74,15 +75,38 @@ function cookieOptions(req) {
   };
 }
 
-// ---------- Server-side sessions (revocable; all cleared on restart) ----------
+// ---------- Server-side sessions (revocable, persisted in the data volume) ----------
+// Only a SHA-256 hash of each session id is stored, so a copy of sessions.json cannot be
+// used to log in. Changing ADMIN_USER, ADMIN_PASSWORD or SESSION_SECRET invalidates them.
 
-// id -> { user, created, lastSeen }
+const SESSIONS_FILE = 'sessions.json';
+const FINGERPRINT = crypto.createHmac('sha256', SECRET).update(`${USER}\n${PASSWORD}`).digest('hex');
+const hashId = (id) => crypto.createHash('sha256').update(id).digest('hex');
+
+// hash(id) -> { user, created, lastSeen }
 const sessions = new Map();
+let dirty = false;
+
+{
+  const saved = await readJson(SESSIONS_FILE, {});
+  if (saved.fingerprint === FINGERPRINT) {
+    for (const [k, v] of Object.entries(saved.sessions ?? {})) sessions.set(k, v);
+  }
+}
+
+function persistSessions() {
+  dirty = false;
+  return writeJson(SESSIONS_FILE, { fingerprint: FINGERPRINT, sessions: Object.fromEntries(sessions) });
+}
+
+const expired = (s, now = Date.now()) =>
+  now - s.created > SESSION_HOURS * 3600_000 || now - s.lastSeen > IDLE_MINUTES * 60_000;
 
 function createSession(user) {
   const id = crypto.randomBytes(32).toString('base64url');
   const now = Date.now();
-  sessions.set(id, { user, created: now, lastSeen: now });
+  sessions.set(hashId(id), { user, created: now, lastSeen: now });
+  void persistSessions();
   return `${id}.${sign(id)}`;
 }
 
@@ -91,22 +115,38 @@ function sessionFromCookie(req) {
   if (!token) return null;
   const [id, sig] = token.split('.');
   if (!id || !sig || !safeEqual(sig, sign(id))) return null;
-  const s = sessions.get(id);
-  if (!s) return null;
-  const now = Date.now();
-  if (now - s.created > SESSION_HOURS * 3600_000 || now - s.lastSeen > IDLE_MINUTES * 60_000) {
-    sessions.delete(id);
+  const key = hashId(id);
+  const s = sessions.get(key);
+  if (!s || s.user !== USER) return null;
+  if (expired(s)) {
+    sessions.delete(key);
+    void persistSessions();
     return null;
   }
-  s.lastSeen = now;
-  return { id, ...s };
+  s.lastSeen = Date.now();
+  dirty = true; // lastSeen is flushed to disk once per minute
+  return { id: key, ...s };
+}
+
+/** Username of a valid session, or null (used for WebSocket upgrades). */
+export function userFor(req) {
+  return sessionFromCookie(req)?.user ?? null;
 }
 
 setInterval(() => {
+  if (dirty) void persistSessions();
+}, 60_000).unref();
+
+setInterval(() => {
   const now = Date.now();
+  let removed = false;
   for (const [id, s] of sessions) {
-    if (now - s.created > SESSION_HOURS * 3600_000 || now - s.lastSeen > IDLE_MINUTES * 60_000) sessions.delete(id);
+    if (expired(s, now)) {
+      sessions.delete(id);
+      removed = true;
+    }
   }
+  if (removed) void persistSessions();
 }, 10 * 60_000).unref();
 
 // ---------- Brute-force protection ----------
@@ -182,6 +222,7 @@ export function logout(req, res) {
   const s = sessionFromCookie(req);
   if (s) {
     sessions.delete(s.id);
+    void persistSessions();
     audit(req, `logout user="${s.user}"`);
   }
   res.clearCookie(COOKIE, cookieOptions(req));

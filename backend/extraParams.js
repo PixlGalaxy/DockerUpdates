@@ -187,7 +187,9 @@ function emptyTarget() {
 }
 
 /** Config keys owned by Extra parameters. */
-export const MANAGED_CONFIG_KEYS = ['Hostname', 'User', 'WorkingDir', 'StopTimeout', 'StopSignal'];
+// StopTimeout is not managed: Docker fills it in on every container, so it is preserved as-is
+// on recreate (--stop-timeout in Extra parameters still overrides it).
+export const MANAGED_CONFIG_KEYS = ['Hostname', 'User', 'WorkingDir', 'StopSignal'];
 
 /** Labels kept untouched (not shown in Extra parameters). */
 export const isSystemLabel = (key) => /^(com\.docker\.|org\.opencontainers\.|dockerupdates\.)/.test(key);
@@ -259,11 +261,11 @@ function quote(value) {
  * Builds the Extra parameters string for an existing container.
  * `config` must already be stripped of image defaults (see userConfig in docker.js).
  */
-export function serializeExtraParams(config, host, { logDriver } = {}) {
+export function serializeExtraParams(config, host, { logDriver, skipMemory = false } = {}) {
   const out = [];
   const add = (flag, value) => out.push(value === undefined ? `--${flag}` : `--${flag}=${quote(value)}`);
 
-  if (host.Memory) add('memory', formatSize(host.Memory));
+  if (host.Memory && !skipMemory) add('memory', formatSize(host.Memory));
   // Docker defaults swap to 2x memory when only --memory is given
   if (host.MemorySwap && host.MemorySwap !== host.Memory * 2) {
     add('memory-swap', host.MemorySwap === -1 ? '-1' : formatSize(host.MemorySwap));
@@ -303,7 +305,6 @@ export function serializeExtraParams(config, host, { logDriver } = {}) {
     if (!r.Capabilities?.some((c) => c.includes('gpu'))) continue;
     add('gpus', r.DeviceIDs?.length ? `device=${r.DeviceIDs.join(',')}` : r.Count === -1 ? 'all' : String(r.Count));
   }
-  if (config.StopTimeout != null) add('stop-timeout', config.StopTimeout);
   if (config.StopSignal) add('stop-signal', config.StopSignal);
   return out.join(' ');
 }

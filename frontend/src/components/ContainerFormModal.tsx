@@ -1,9 +1,23 @@
-import { CircleAlert, CircleCheck, ImageIcon, LoaderCircle, Plus, TriangleAlert, X } from 'lucide-react'
+import {
+  CircleAlert,
+  CircleCheck,
+  FileDown,
+  FileUp,
+  ImageIcon,
+  LayoutTemplate,
+  LoaderCircle,
+  MemoryStick,
+  Plus,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api } from '../api'
-import type { ContainerSpec, RestartPolicy } from '../types'
+import type { ContainerSpec, TemplateSummary } from '../types'
+import { formatBytes } from '../utils'
 import Logo from './Logo'
-import { Button, IconButton } from './ui'
+import { Button, IconButton, Toggle } from './ui'
 
 interface Props {
   mode: 'add' | 'edit'
@@ -11,6 +25,32 @@ interface Props {
   initial?: ContainerSpec
   onClose: () => void
   onSubmit: (spec: ContainerSpec) => Promise<void>
+  /** Host RAM in bytes (max of the memory slider) */
+  hostMemTotal?: number
+}
+
+const MiB = 1024 ** 2
+const GiB = 1024 ** 3
+
+/** Accepts a template / exported file and keeps only known fields. */
+function toSpec(data: unknown): ContainerSpec {
+  if (!data || typeof data !== 'object') throw new Error('Invalid template file')
+  const d = data as Partial<ContainerSpec>
+  if (typeof d.image !== 'string' || !d.image) throw new Error('The template has no image')
+  const arr = <T,>(v: unknown) => (Array.isArray(v) ? (v as T[]) : [])
+  return {
+    ...EMPTY,
+    name: typeof d.name === 'string' ? d.name : '',
+    image: d.image,
+    network: typeof d.network === 'string' ? d.network : 'bridge',
+    restart: d.restart ?? 'unless-stopped',
+    ports: arr(d.ports),
+    volumes: arr<ContainerSpec['volumes'][number]>(d.volumes).map((v) => ({ ...v, mode: v.mode === 'ro' ? 'ro' : 'rw' })),
+    env: arr(d.env),
+    extraParams: typeof d.extraParams === 'string' ? d.extraParams : '',
+    iconUrl: typeof d.iconUrl === 'string' ? d.iconUrl : '',
+    memory: Number(d.memory) > 0 ? Number(d.memory) : 0,
+  }
 }
 
 const EMPTY: ContainerSpec = {
@@ -23,6 +63,7 @@ const EMPTY: ContainerSpec = {
   env: [],
   extraParams: '',
   iconUrl: '',
+  memory: 0,
 }
 
 const inputCls =
@@ -30,8 +71,10 @@ const inputCls =
 
 type ExtraCheck = { state: 'idle' | 'checking' } | { state: 'ok'; summary: string[] } | { state: 'error'; message: string }
 
-export default function ContainerFormModal({ mode, initial, onClose, onSubmit }: Props) {
-  const [form, setForm] = useState<ContainerSpec>(initial ?? EMPTY)
+export default function ContainerFormModal({ mode, initial, onClose, onSubmit, hostMemTotal = 0 }: Props) {
+  const [form, setForm] = useState<ContainerSpec>({ ...EMPTY, ...initial })
+  const [templates, setTemplates] = useState<TemplateSummary[]>([])
+  const fileInput = useRef<HTMLInputElement>(null)
   const [networks, setNetworks] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,7 +85,44 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit }:
 
   useEffect(() => {
     api.networks().then(setNetworks, () => setNetworks([]))
-  }, [])
+    if (mode === 'add') api.templates().then(setTemplates, () => setTemplates([]))
+  }, [mode])
+
+  async function loadTemplate(name: string) {
+    if (!name) return
+    try {
+      setForm(toSpec(await api.template(name)))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load template')
+    }
+  }
+
+  async function removeTemplate(name: string) {
+    if (!confirm(`Delete template "${name}"?`)) return
+    await api.deleteTemplate(name).catch(() => undefined)
+    setTemplates((t) => t.filter((x) => x.name !== name))
+  }
+
+  function exportTemplate() {
+    const blob = new Blob([JSON.stringify({ ...form, exportedBy: 'DockerUpdates' }, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${form.name || 'container'}.dockerupdates.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  async function importTemplate(file: File) {
+    try {
+      if (file.size > 512 * 1024) throw new Error('File too large')
+      const spec = toSpec(JSON.parse(await file.text()))
+      setForm(mode === 'edit' ? { ...spec, name: form.name } : spec)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? `Import failed: ${err.message}` : 'Import failed')
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
@@ -128,10 +208,59 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit }:
                 : 'The image is pulled and the container started automatically.'}
             </p>
           </div>
-          <IconButton label="Close" className="ml-auto" onClick={onClose} disabled={saving}>
-            <X size={18} />
-          </IconButton>
+          <div className="ml-auto flex items-center gap-1">
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void importTemplate(f)
+                e.target.value = ''
+              }}
+            />
+            <IconButton label="Import template (.json)" onClick={() => fileInput.current?.click()}>
+              <FileUp size={16} />
+            </IconButton>
+            <IconButton label="Export template (.json)" onClick={exportTemplate} disabled={!form.image}>
+              <FileDown size={16} />
+            </IconButton>
+            <IconButton label="Close" onClick={onClose} disabled={saving}>
+              <X size={18} />
+            </IconButton>
+          </div>
         </div>
+
+        {mode === 'add' && templates.length > 0 && (
+          <div className="border-b border-line bg-surface-2/40 px-6 py-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted uppercase">
+              <LayoutTemplate size={13} /> Templates
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {templates.map((t) => (
+                <span key={t.name} className="group/tpl inline-flex items-center overflow-hidden rounded-lg border border-line bg-surface text-xs shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => void loadTemplate(t.name)}
+                    title={`${t.image} · saved ${new Date(t.savedAt).toLocaleString()}`}
+                    className="px-2.5 py-1.5 font-medium hover:bg-sky-500/10 hover:text-sky-700 dark:hover:text-sky-300"
+                  >
+                    {t.name}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete template ${t.name}`}
+                    onClick={() => void removeTemplate(t.name)}
+                    className="border-l border-line px-1.5 py-1.5 text-muted hover:bg-red-500/10 hover:text-red-500"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-6 px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -164,18 +293,20 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit }:
                 ))}
               </select>
             </Field>
-            <Field label="Restart policy">
-              <select
-                className={inputCls}
-                value={form.restart}
-                onChange={(e) => patch({ restart: e.target.value as RestartPolicy })}
-              >
-                <option value="no">no</option>
-                <option value="always">always</option>
-                <option value="unless-stopped">unless-stopped</option>
-                <option value="on-failure">on-failure</option>
-              </select>
-            </Field>
+            <div className="block">
+              <span className="mb-1.5 block text-xs font-medium">Restart</span>
+              <label className="flex h-9 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm shadow-xs">
+                <Toggle
+                  label="Restart automatically"
+                  checked={form.restart !== 'no'}
+                  onChange={(on) => patch({ restart: on ? (form.restart === 'no' ? 'unless-stopped' : form.restart) : 'no' })}
+                />
+                <span>
+                  Restart automatically <span className="font-mono text-xs text-muted">({form.restart === 'no' ? 'off' : form.restart})</span>
+                </span>
+              </label>
+            </div>
+            <MemoryField value={form.memory} max={hostMemTotal} onChange={(memory) => patch({ memory })} />
             <Field label="Icon URL" hint="png, jpg, webp, gif, svg or ico — empty = website favicon" className="sm:col-span-2">
               <div className="relative">
                 <ImageIcon size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
@@ -257,7 +388,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit }:
               className={`${inputCls} h-auto py-2 font-mono text-xs leading-relaxed ${extraCheck.state === 'error' ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
               value={form.extraParams}
               onChange={(e) => patch({ extraParams: e.target.value })}
-              placeholder="--memory=2g --cpus=1.5 --restart=unless-stopped"
+              placeholder="--cpus=1.5 --hostname=myapp --log-opt max-size=10m"
             />
             <ExtraFeedback check={extraCheck} />
             <p className="mt-1 text-[11px] text-muted">
@@ -325,6 +456,56 @@ function ExtraFeedback({ check }: { check: ExtraCheck }) {
   }
   return null
 }
+
+function MemoryField({ value, max, onChange }: { value: number; max: number; onChange: (bytes: number) => void }) {
+  const step = 64 * MiB
+  const limit = max > 0 ? Math.floor(max / step) * step : 64 * GiB
+  const pct = limit ? Math.min(100, (value / limit) * 100) : 0
+  const presets = [512 * MiB, GiB, 2 * GiB, 4 * GiB, 8 * GiB].filter((p) => p < limit)
+  return (
+    <div className="sm:col-span-2">
+      <span className="mb-1.5 flex items-baseline justify-between text-xs font-medium">
+        <span className="inline-flex items-center gap-1.5">
+          <MemoryStick size={13} className="text-muted" /> Memory limit
+        </span>
+        <span className="font-normal text-muted">{max > 0 ? `Host RAM: ${formatBytes(max)}` : ''}</span>
+      </span>
+      <div className="rounded-lg border border-line bg-surface px-3 py-2.5 shadow-xs">
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={limit}
+            step={step}
+            value={Math.min(value, limit)}
+            onChange={(e) => onChange(Number(e.target.value))}
+            aria-label="Memory limit"
+            className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full accent-sky-600"
+            style={{ background: `linear-gradient(to right, rgb(2 132 199) ${pct}%, var(--line) ${pct}%)` }}
+          />
+          <span className={`w-24 text-right font-mono text-sm font-semibold tabular-nums ${value ? '' : 'text-muted'}`}>
+            {value ? formatBytes(value) : 'No limit'}
+          </span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          <button type="button" onClick={() => onChange(0)} className={presetCls(value === 0)}>
+            No limit
+          </button>
+          {presets.map((p) => (
+            <button key={p} type="button" onClick={() => onChange(p)} className={presetCls(value === p)}>
+              {formatBytes(p)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const presetCls = (on: boolean) =>
+  `rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+    on ? 'border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300' : 'border-line text-muted hover:bg-surface-2'
+  }`
 
 function Field({ label, hint, className = '', children }: { label: string; hint?: string; className?: string; children: ReactNode }) {
   return (

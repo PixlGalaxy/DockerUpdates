@@ -18,12 +18,16 @@
 
 ## Features
 
-- **Container overview**: state, image and tag, network, IP / MAC, ports (clickable), volumes, uptime, autostart
-- **Live resources**: CPU and RAM refreshed every second, with the limits configured on each container (`--memory`, `--cpus`)
-- **Update checks**: check one or all containers for new images and update them; private registries supported (GHCR, Docker Hub, any registry) using your `docker login`
+- **Container overview**: state, image and tag, network, IP / MAC, container and LAN ports, volumes, uptime, autostart. Right-click a container for every action
+- **Live resources**: CPU and RAM refreshed every second, with the limits configured on each container
+- **Update checks**: check one or all containers and see the exact change (`4bbda4e -> 9f3c2d1`); private registries supported (GHCR, Docker Hub, any registry) using your `docker login`
+- **Automatic updates**: global schedule (hourly, daily, weekly, monthly or cron) plus per-container schedules, "update" or "notify only", time zone aware
+- **Notifications**: Discord (rich embeds), Telegram, ntfy and generic webhooks (HMAC signed), with a test button
+- **Update history** per container, and **image cleanup** (after each update and/or on a schedule)
+- **Logs and console**: live logs with filter and download, and an interactive shell inside any running container
 - **Self-update**: DockerUpdates updates itself safely through a short-lived helper container
-- **Edit containers like Unraid**: name, image, network, restart policy, ports, volumes, environment variables and **Extra parameters** (`--memory=2g --cpus=1.5 …`) validated as you type
-- **Add containers** from any image
+- **Edit containers like Unraid**: name, image, network, auto-restart, memory limit slider, ports, volumes, environment variables and **Extra parameters** (`--cpus=1.5 --hostname=app …`) validated as you type
+- **Templates**: every created or edited container is saved as a template; import / export as JSON
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
 - **Icons**: custom icon URL per image, Unraid icon label, or the app's favicon discovered automatically
 - **Secure by default**: login, revocable sessions, brute-force lockout, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
@@ -78,12 +82,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.docker/config.json:/root/.docker/config.json:ro   # optional: private registries
-      - ./data:/app/backend/data                            # icons
+      - ./data:/app/backend/data                            # settings, sessions, history, templates, icons
     security_opt:
       - no-new-privileges:true
 ```
 
 Open `http://<server-ip>:3000` and sign in.
+
+The `data` volume keeps settings, notification channels, update history, templates, icons and login sessions across updates. Without it, they are lost every time the container is recreated.
 
 > If `~/.docker/config.json` does not exist (you never ran `docker login`), remove that volume line.
 
@@ -122,7 +128,7 @@ Use tokens with read-only scope (`read:packages` for GHCR). Containers whose reg
 
 1. Create a *Proxy Host* pointing to `http://<server-ip>:3000`
 2. SSL tab: request a certificate, enable **Force SSL**, **HTTP/2** and **HSTS**
-3. Enable **Block Common Exploits** and, ideally, an **Access List** (IP allow-list or basic auth)
+3. Enable **Websockets Support** (needed by the container console), **Block Common Exploits** and, ideally, an **Access List** (IP allow-list or basic auth)
 4. In `.env` add `TRUST_PROXY=<npm-ip>` and `COOKIE_SECURE=true`, then recreate the container
 5. Do not forward port `3000` on your router, and do not add CORS headers in NPM
 

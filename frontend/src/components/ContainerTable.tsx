@@ -1,4 +1,4 @@
-import type { ContainerAction, ContainerInfo } from '../types'
+import type { ContainerInfo } from '../types'
 import ContainerRow from './ContainerRow'
 import Logo from './Logo'
 
@@ -9,13 +9,11 @@ interface Props {
   loading: boolean
   busyIds: Set<string>
   emptyMessage: string
-  onAction: (id: string, action: ContainerAction) => void
-  onRemove: (id: string) => void
+  onMenu: (container: ContainerInfo, x: number, y: number) => void
   onAutostart: (id: string, enabled: boolean) => void
   onCheckUpdate: (id: string) => void
   onUpdate: (id: string) => void
   onCopy: (text: string) => void
-  onEdit: (id: string) => void
 }
 
 export default function ContainerTable({
@@ -31,12 +29,12 @@ export default function ContainerTable({
     'Application',
     'Version',
     ...(advanced ? ['Network', 'IP / MAC'] : []),
-    'Ports',
-    ...(advanced ? ['Volumes'] : []),
-    'Resources',
+    'Container port',
+    'LAN IP:Port',
+    ...(advanced ? ['Volume mappings (app ↔ host)'] : []),
+    'CPU & Memory',
     'Autostart',
     'Uptime',
-    '',
   ]
 
   return (
@@ -80,13 +78,11 @@ export default function ContainerTable({
                   hostIp={hostIp}
                   advanced={advanced}
                   busy={busyIds.has(c.id)}
-                  onAction={(a) => handlers.onAction(c.id, a)}
-                  onRemove={() => handlers.onRemove(c.id)}
+                  onMenu={(x, y) => handlers.onMenu(c, x, y)}
                   onAutostart={(e) => handlers.onAutostart(c.id, e)}
                   onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
                   onUpdate={() => handlers.onUpdate(c.id)}
                   onCopy={handlers.onCopy}
-                  onEdit={() => handlers.onEdit(c.id)}
                 />
               ))}
 

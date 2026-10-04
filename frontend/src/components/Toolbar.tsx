@@ -1,33 +1,35 @@
-import { CloudDownload, Pause, Play, RefreshCw, Search, Square, StepForward, X } from 'lucide-react'
-import { Button, Toggle } from './ui'
+import {
+  CloudDownload,
+  LoaderCircle,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  SearchCheck,
+  Square,
+  StepForward,
+  X,
+} from 'lucide-react'
+import type { ReactNode } from 'react'
+import { IconButton, Toggle } from './ui'
 
-interface Props {
+// ---------- Top bar: search, view options, refresh ----------
+
+interface TopBarProps {
   search: string
   onSearch: (value: string) => void
   advanced: boolean
   onAdvanced: (value: boolean) => void
-  busy: string | null
-  updates: number
-  onBulk: (action: 'start' | 'stop' | 'pause' | 'unpause') => void
-  onCheckUpdates: () => void
-  onUpdateAll: () => void
+  lastUpdated: Date | null
+  refreshing: boolean
+  onRefresh: () => void
 }
 
-export default function Toolbar({
-  search,
-  onSearch,
-  advanced,
-  onAdvanced,
-  busy,
-  updates,
-  onBulk,
-  onCheckUpdates,
-  onUpdateAll,
-}: Props) {
-  const locked = busy !== null
+export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, refreshing, onRefresh }: TopBarProps) {
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-      <div className="relative w-full lg:max-w-xs">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="relative w-full sm:max-w-xs">
         <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
         <input
           type="search"
@@ -53,53 +55,120 @@ export default function Toolbar({
         Advanced view
       </label>
 
-      <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-        <div className="inline-flex overflow-hidden rounded-lg border border-line bg-surface shadow-xs">
-          {(
-            [
-              ['start', 'Start all', <Play key="i" size={14} />],
-              ['stop', 'Stop all', <Square key="i" size={14} />],
-              ['pause', 'Pause all', <Pause key="i" size={14} />],
-              ['unpause', 'Resume all', <StepForward key="i" size={14} />],
-            ] as const
-          ).map(([action, label, icon], i) => (
-            <button
-              key={action}
-              type="button"
-              disabled={locked}
-              title={action === 'stop' || action === 'pause' ? `${label} (except DockerUpdates)` : label}
-              onClick={() => onBulk(action)}
-              className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-medium transition-colors hover:bg-surface-2 disabled:opacity-50 ${i > 0 ? 'border-l border-line' : ''}`}
-            >
-              <span className="text-muted">{icon}</span>
-              <span className="hidden xl:inline">{label}</span>
-            </button>
-          ))}
-        </div>
-
-        <Button
-          size="sm"
-          icon={<RefreshCw size={14} />}
-          loading={busy === 'check'}
-          disabled={locked}
-          onClick={onCheckUpdates}
-        >
-          Check for updates
-        </Button>
-        <Button
-          variant="warning"
-          size="sm"
-          icon={<CloudDownload size={14} />}
-          loading={busy === 'update'}
-          disabled={locked || updates === 0}
-          onClick={onUpdateAll}
-        >
-          Update all
-          {updates > 0 && (
-            <span className="ml-0.5 rounded-full bg-white/25 px-1.5 text-[11px] tabular-nums">{updates}</span>
-          )}
-        </Button>
+      <div className="flex items-center gap-1 text-xs text-muted sm:ml-auto">
+        <span className="hidden sm:inline">Right-click a container for more actions</span>
+        <span className="mx-2 hidden h-4 w-px bg-line sm:inline-block" />
+        {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
+        <IconButton label="Refresh" onClick={onRefresh}>
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+        </IconButton>
       </div>
+    </div>
+  )
+}
+
+// ---------- Bottom bar: colored bulk actions (Unraid style) ----------
+
+type Tone = 'sky' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'violet'
+
+const TONES: Record<Tone, string> = {
+  sky: 'border-sky-500/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+  emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
+  rose: 'border-rose-500/40 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-300',
+  amber: 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
+  cyan: 'border-cyan-400/60 bg-cyan-400/15 text-cyan-700 hover:bg-cyan-400/25 dark:text-cyan-300',
+  indigo: 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300',
+  violet: 'border-violet-600 bg-violet-600 text-white shadow-sm shadow-violet-600/30 hover:bg-violet-500',
+}
+
+function BarButton({
+  tone,
+  icon,
+  children,
+  title,
+  loading,
+  disabled,
+  onClick,
+}: {
+  tone: Tone
+  icon: ReactNode
+  children: ReactNode
+  title?: string
+  loading?: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled || loading}
+      onClick={onClick}
+      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-semibold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-45 ${TONES[tone]}`}
+    >
+      {loading ? <LoaderCircle size={14} className="animate-spin" /> : icon}
+      {children}
+    </button>
+  )
+}
+
+interface ActionBarProps {
+  busy: string | null
+  updates: number
+  onAdd: () => void
+  onBulk: (action: 'start' | 'stop' | 'pause' | 'unpause') => void
+  onCheckUpdates: () => void
+  onUpdateAll: () => void
+}
+
+export function ActionBar({ busy, updates, onAdd, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
+  const locked = busy !== null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <BarButton tone="sky" icon={<Plus size={14} />} onClick={onAdd}>
+        Add container
+      </BarButton>
+      <span className="mx-1 hidden h-6 w-px bg-line sm:block" />
+      <BarButton tone="emerald" icon={<Play size={14} />} loading={busy === 'start'} disabled={locked} onClick={() => onBulk('start')}>
+        Start all
+      </BarButton>
+      <BarButton
+        tone="rose"
+        icon={<Square size={14} />}
+        loading={busy === 'stop'}
+        disabled={locked}
+        title="Stop all (except DockerUpdates)"
+        onClick={() => onBulk('stop')}
+      >
+        Stop all
+      </BarButton>
+      <BarButton
+        tone="amber"
+        icon={<Pause size={14} />}
+        loading={busy === 'pause'}
+        disabled={locked}
+        title="Pause all (except DockerUpdates)"
+        onClick={() => onBulk('pause')}
+      >
+        Pause all
+      </BarButton>
+      <BarButton tone="cyan" icon={<StepForward size={14} />} loading={busy === 'unpause'} disabled={locked} onClick={() => onBulk('unpause')}>
+        Resume all
+      </BarButton>
+      <span className="mx-1 hidden h-6 w-px bg-line sm:block" />
+      <BarButton tone="indigo" icon={<SearchCheck size={14} />} loading={busy === 'check'} disabled={locked} onClick={onCheckUpdates}>
+        Check for updates
+      </BarButton>
+      <BarButton
+        tone="violet"
+        icon={<CloudDownload size={14} />}
+        loading={busy === 'update'}
+        disabled={locked || updates === 0}
+        onClick={onUpdateAll}
+      >
+        Update all
+        {updates > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px] tabular-nums">{updates}</span>}
+      </BarButton>
     </div>
   )
 }
