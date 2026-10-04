@@ -61,5 +61,5 @@ export function describeAgent(agent: string): string {
   return os ? `${browser} on ${os}` : browser
 }
 
-export const thCls = 'py-2 pr-4 text-xs font-medium text-muted'
-export const tdCls = 'py-2.5 pr-4 align-middle'
+export const thCls = 'py-2 pr-4 text-xs font-medium text-muted max-md:whitespace-nowrap'
+export const tdCls = 'py-2.5 pr-4 align-middle max-md:whitespace-nowrap'

@@ -76,7 +76,7 @@ export default function ContextMenu({ x, y, title, items, onClose }: Props) {
                 onClose()
                 item.onSelect()
               }}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-40 ${
+              className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm max-md:py-2 transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-40 ${
                 item.danger ? 'text-red-600 dark:text-red-400' : ''
               }`}
             >

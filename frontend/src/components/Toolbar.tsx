@@ -28,7 +28,7 @@ interface TopBarProps {
 
 export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, refreshing, onRefresh }: TopBarProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div className="flex flex-wrap items-center gap-3">
       <div className="relative w-full sm:max-w-xs">
         <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
         <input
@@ -55,7 +55,7 @@ export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, re
         Advanced view
       </label>
 
-      <div className="flex items-center gap-1 text-xs text-muted sm:ml-auto">
+      <div className="ml-auto flex items-center gap-1 text-xs text-muted">
         <span className="hidden sm:inline">Right-click a container for more actions</span>
         <span className="mx-2 hidden h-4 w-px bg-line sm:inline-block" />
         {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
@@ -88,6 +88,7 @@ function BarButton({
   title,
   loading,
   disabled,
+  className = '',
   onClick,
 }: {
   tone: Tone
@@ -96,6 +97,7 @@ function BarButton({
   title?: string
   loading?: boolean
   disabled?: boolean
+  className?: string
   onClick: () => void
 }) {
   return (
@@ -104,7 +106,7 @@ function BarButton({
       title={title}
       disabled={disabled || loading}
       onClick={onClick}
-      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-semibold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-45 ${TONES[tone]}`}
+      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-semibold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-45 max-sm:justify-center max-sm:px-2 max-sm:tracking-normal whitespace-nowrap ${TONES[tone]} ${className}`}
     >
       {loading ? <LoaderCircle size={14} className="animate-spin" /> : icon}
       {children}
@@ -124,7 +126,7 @@ interface ActionBarProps {
 export function ActionBar({ busy, updates, onAdd, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
   const locked = busy !== null
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
       <BarButton tone="sky" icon={<Plus size={14} />} onClick={onAdd}>
         Add container
       </BarButton>
@@ -164,6 +166,7 @@ export function ActionBar({ busy, updates, onAdd, onBulk, onCheckUpdates, onUpda
         icon={<CloudDownload size={14} />}
         loading={busy === 'update'}
         disabled={locked || updates === 0}
+        className="max-sm:col-span-2"
         onClick={onUpdateAll}
       >
         Update all
