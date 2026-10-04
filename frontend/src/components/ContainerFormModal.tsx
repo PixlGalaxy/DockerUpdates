@@ -371,17 +371,31 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
             onAdd={() => patch({ volumes: [...form.volumes, { host: '', container: '', mode: 'rw' }] })}
           >
             <ColumnHeads labels={['Host path (on the server)', 'Container path (inside the app)']} extra="w-20" />
-            {form.volumes.map((v, i) => (
-              <div key={i} className="flex gap-2">
-                <input className={`${inputCls} font-mono`} placeholder="/mnt/user/appdata/app or volume name" aria-label="Host path" value={v.host} onChange={(e) => updateAt('volumes', i, { host: e.target.value })} />
-                <input className={`${inputCls} font-mono`} placeholder="/data" aria-label="Container path" value={v.container} onChange={(e) => updateAt('volumes', i, { container: e.target.value })} />
-                <select className={`${inputCls} !w-20`} value={v.mode} onChange={(e) => updateAt('volumes', i, { mode: e.target.value as 'rw' | 'ro' })}>
-                  <option value="rw">RW</option>
-                  <option value="ro">RO</option>
-                </select>
-                <RemoveBtn onClick={() => removeAt('volumes', i)} />
-              </div>
-            ))}
+            {form.volumes.map((v, i) => {
+              // Docker-generated volume for an image VOLUME that was never mapped
+              const anonymous = /^[a-f0-9]{64}$/.test(v.host)
+              const replaced = anonymous && form.volumes.some((o, j) => j !== i && !/^[a-f0-9]{64}$/.test(o.host) && o.host && o.container.replace(/\/+$/, '') === v.container.replace(/\/+$/, ''))
+              return (
+                <div key={i}>
+                  <div className="flex gap-2">
+                    <input className={`${inputCls} font-mono ${anonymous ? 'text-muted' : ''}`} placeholder="/mnt/user/appdata/app or volume name" aria-label="Host path" value={v.host} onChange={(e) => updateAt('volumes', i, { host: e.target.value })} />
+                    <input className={`${inputCls} font-mono`} placeholder="/data" aria-label="Container path" value={v.container} onChange={(e) => updateAt('volumes', i, { container: e.target.value })} />
+                    <select className={`${inputCls} !w-20`} value={v.mode} onChange={(e) => updateAt('volumes', i, { mode: e.target.value as 'rw' | 'ro' })}>
+                      <option value="rw">RW</option>
+                      <option value="ro">RO</option>
+                    </select>
+                    <RemoveBtn onClick={() => removeAt('volumes', i)} />
+                  </div>
+                  {anonymous && (
+                    <p className={`mt-1 px-0.5 text-[11px] ${replaced ? 'text-amber-600 dark:text-amber-400' : 'text-muted'}`}>
+                      {replaced
+                        ? `Anonymous volume: it will be dropped because ${v.container} is now mapped to a host path.`
+                        : `Anonymous volume created by Docker for ${v.container} (the image stores data there). Map ${v.container} to a host path to keep the data in a folder you choose.`}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
           </Section>
 
           <Section

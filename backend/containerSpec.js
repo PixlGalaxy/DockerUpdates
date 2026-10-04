@@ -10,6 +10,22 @@ import {
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 
 const RESTART = ['no', 'always', 'unless-stopped', 'on-failure'];
+
+/** Docker-generated name of an anonymous volume (image VOLUME without a mapping). */
+export const isAnonymousVolume = (host) => /^[a-f0-9]{64}$/.test(String(host ?? ''));
+
+/**
+ * Drops anonymous volumes whose container path is now mapped explicitly (e.g. the image's
+ * /data volume after adding "/docker/app/data -> /data"); otherwise Docker would fail
+ * with "Duplicate mount point".
+ */
+export function effectiveVolumes(volumes = []) {
+  const rows = volumes.filter((v) => v.host && v.container);
+  const explicit = new Set(rows.filter((v) => !isAnonymousVolume(v.host)).map((v) => normalizePath(v.container)));
+  return rows.filter((v) => !isAnonymousVolume(v.host) || !explicit.has(normalizePath(v.container)));
+}
+
+const normalizePath = (p) => String(p).replace(/\/+$/, '') || '/';
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
 /** Spec of an existing container. `config` is the container config minus image defaults. */
@@ -89,6 +105,12 @@ export function validateSpec(spec) {
     if (!v.host || !v.container) throw bad('Each volume needs both a host path and a container path');
     if (!String(v.container).startsWith('/')) throw bad(`Container path "${v.container}" must be absolute`);
   }
+  const seen = new Set();
+  for (const v of effectiveVolumes(spec.volumes)) {
+    const target = normalizePath(v.container);
+    if (seen.has(target)) throw bad(`Two volume mappings use the same container path "${target}"`);
+    seen.add(target);
+  }
   if (spec.memory !== undefined && (!Number.isFinite(Number(spec.memory)) || Number(spec.memory) < 0)) {
     throw bad('Invalid memory limit');
   }
@@ -136,9 +158,7 @@ export function buildCreateOptions(spec, base = null) {
   // --memory in Extra parameters wins over the slider
   if (!host.Memory && Number(spec.memory) > 0) host.Memory = Math.round(Number(spec.memory));
   host.PortBindings = bindings;
-  host.Binds = (spec.volumes ?? [])
-    .filter((v) => v.host && v.container)
-    .map((v) => `${v.host}:${v.container}${v.mode === 'ro' ? ':ro' : ''}`);
+  host.Binds = effectiveVolumes(spec.volumes).map((v) => `${v.host}:${v.container}${v.mode === 'ro' ? ':ro' : ''}`);
   // All bind/volume mounts are now in Binds; keep only tmpfs mounts from --mount
   host.Mounts = (host.Mounts ?? []).filter((m) => m.Type === 'tmpfs');
   host.NetworkMode = network;
