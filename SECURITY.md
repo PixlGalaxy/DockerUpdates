@@ -36,7 +36,7 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 
 - It needs the Docker socket (`/var/run/docker.sock`), which grants full control of the host. Anyone who logs in can start privileged containers.
 - There is one account, defined by `ADMIN_USER` / `ADMIN_PASSWORD` in the `.env` file. The password is never stored by the app.
-- Sessions are revocable on logout and expire after `SESSION_IDLE_MINUTES` of inactivity (default 120) or `SESSION_HOURS` (default 12). They are persisted in the data volume so updates do not log you out; only a SHA-256 hash of each session id is stored, and changing `ADMIN_USER`, `ADMIN_PASSWORD` or `SESSION_SECRET` invalidates all of them.
+- Sessions are revocable on logout or from Admin Panel > Dashboard (sign out one browser or every other one), and expire after the idle timeout (default 120 minutes) or the session lifetime (default 12 hours). Both are set in Settings > Login & sessions; `SESSION_IDLE_MINUTES` / `SESSION_HOURS` only give the initial values. They are persisted in the data volume so updates do not log you out; only a SHA-256 hash of each session id is stored, and changing `ADMIN_USER`, `ADMIN_PASSWORD` or `SESSION_SECRET` invalidates all of them.
 - The container console runs a shell inside containers (`docker exec`). It uses a WebSocket that requires a valid session and an `Origin` matching the app, and every console session is written to the audit log.
 - Notification secrets (webhook URLs, bot tokens) are stored in the data volume and never sent back to the browser in clear text.
 
@@ -44,16 +44,17 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 
 | Area | Protection |
 | --- | --- |
-| Login | Per-IP lockout (5 failures / 15 min), global lockout (30 failures / 15 min), 1 s delay on failures, constant-time comparison. Without `TRUST_PROXY`, the lockout also counts the address that opened the connection, so fake `X-Forwarded-For` values cannot dodge it |
+| Login | Per-IP lockout (default 5 failures / 15 min), global lockout (default 30 failures / 15 min), both adjustable in Settings > Login & sessions; 1 s delay on failures, constant-time comparison. Lockouts can be lifted from Admin Panel > IP access. Without `TRUST_PROXY`, the lockout also counts the address that opened the connection, so fake `X-Forwarded-For` values cannot dodge it |
 | Passwords | App refuses to start with a default or < 8 character password |
 | Cookies | `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS (or forced with `COOKIE_SECURE=true`), HMAC-signed |
 | CSRF / CORS | Same-origin only API: no CORS headers, preflights rejected, cross-site fetches rejected, `Origin` must match the app for every state-changing request (also blocks sibling subdomains behind the same proxy) |
 | Headers | Strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY`, HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control: no-store` on the API |
 | Proxy | Only proxies listed in `TRUST_PROXY` may set `X-Forwarded-For` / `X-Forwarded-Proto`. When it is not set, private networks are trusted, a warning is printed at startup, and audit lines show the real peer (`via=`) next to the forwarded IP |
 | Input | Container IDs validated (no Docker API path traversal), 100 KB request body limit, Extra parameters parsed against an allow-list of `docker run` flags, `__proto__` / `constructor` / `prototype` keys ignored in settings |
+| IP bans | Admin Panel > IP access keeps a persistent list of banned IPs and CIDR ranges (data volume, `ip-bans.json`). Banned clients get a 403 for every request, including static files and the console WebSocket. Loopback, your own IP and your reverse proxy cannot be banned, so you cannot lock yourself out |
 | Icons | Size-limited (1 MB), type-checked downloads, served with a sandboxing CSP. Icon URLs from image labels are only followed when they are `http(s)` |
 | Registry credentials | Read-only mount of `~/.docker/config.json`, or `REGISTRY_AUTH`; never sent to the browser |
-| Auditing | Logins, lockouts, blocked origins and every state-changing API call are logged (`docker logs dockerupdates`) |
+| Auditing | Logins, lockouts, bans, blocked origins and every state-changing API call are logged (`docker logs dockerupdates`). The last 5000 log lines are also shown in Admin Panel > Server logs (memory only, cleared on restart) |
 
 ## Fixed issues
 
@@ -76,4 +77,4 @@ When exposing DockerUpdates outside your LAN (e.g. through Nginx Proxy Manager):
 - [ ] Run the container with `--security-opt no-new-privileges`
 - [ ] Use registry tokens with read-only scope (`read:packages`)
 - [ ] Keep the image updated
-- [ ] Review `docker logs dockerupdates` for `[audit]` entries from time to time
+- [ ] Review Admin Panel > Server logs (or `docker logs dockerupdates`) for `[audit]` entries from time to time, and check Admin Panel > Dashboard for sessions you do not recognise

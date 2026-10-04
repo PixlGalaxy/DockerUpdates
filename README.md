@@ -25,7 +25,7 @@
 - **Container overview**: state, image and tag, network, IP / MAC, container and LAN ports, volumes, uptime, autostart. Right-click a container for every action
 - **Live resources**: CPU and RAM refreshed every second, with the limits configured on each container; host CPU and RAM always visible in the header
 - **Health alerts**: health check status on every container (healthy, unhealthy, starting) and notifications when a container becomes unhealthy, recovers, crashes or keeps restarting
-- **Update checks**: check one or all containers and see the exact change (`4bbda4e -> 9f3c2d1`); private registries supported (GHCR, Docker Hub, any registry) using your `docker login`
+- **Update checks**: check one or all containers and see the exact change (`4bbda4e -> 9f3c2d1`); private registries supported (GHCR, Docker Hub, any registry) using your `docker login`. A background check runs when DockerUpdates starts and then on an interval you choose in Settings (it only marks updates: nothing is installed unless Auto-Update says so)
 - **Automatic updates**: global schedule (hourly, daily, weekly, monthly or cron) plus per-container schedules, "update" or "notify only", time zone aware, with an optional cooldown so only images published N days ago are installed
 - **Notifications**: Discord (rich embeds), Telegram, ntfy and generic webhooks (HMAC signed), with a test button
 - **Update history** per container, and **image cleanup** (after each update and/or on a schedule)
@@ -36,7 +36,8 @@
 - **Dedicated LAN IPs (macvlan / ipvlan)**: enable it once in Settings (the server network is detected automatically, nothing to run on the host), then give containers a fixed IP with an availability check
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
 - **Icons**: custom icon URL per image, or the app's favicon discovered automatically
-- **Secure by default**: login, revocable sessions, brute-force lockout, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
+- **Admin Panel**: active sessions (sign out any browser), failed logins, live server logs with the audit trail, login lockouts you can lift, an IP / CIDR ban list, and system information (app, image, Docker engine, data volume)
+- **Secure by default**: login, revocable sessions, brute-force lockout with limits editable in Settings, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
 - Light / dark theme, search and filters, Linux and Windows (Docker Desktop) hosts
 
 ## Screenshots
@@ -133,8 +134,8 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `ADMIN_USER` | Yes | | Login username |
 | `ADMIN_PASSWORD` | Yes | | Login password. Default or < 8 character passwords are rejected; use 12+ |
 | `SESSION_SECRET` | | random | Signs session cookies, 32+ characters (`openssl rand -hex 32`) |
-| `SESSION_HOURS` | | `12` | Maximum session lifetime |
-| `SESSION_IDLE_MINUTES` | | `120` | Sign out after this much inactivity |
+| `SESSION_HOURS` | | `12` | Maximum session lifetime (initial value, then editable in Settings > Login & sessions) |
+| `SESSION_IDLE_MINUTES` | | `120` | Sign out after this much inactivity (initial value, then editable in Settings) |
 | `PORT` | | `3000` | HTTP port inside the container |
 | `HOST_IP` | | auto | IP shown in the header and the *LAN IP:Port* links. Set it when running in Docker |
 | `HOST_NAME` | | Docker host name | Server name shown in the header |

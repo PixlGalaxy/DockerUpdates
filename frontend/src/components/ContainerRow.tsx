@@ -13,8 +13,8 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
-import { useState, type MouseEvent } from 'react'
-import type { ContainerInfo } from '../types'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import type { ContainerInfo, VolumeMapping } from '../types'
 import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
 
@@ -41,6 +41,8 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
 }
 
 const td = 'px-3 py-3.5 align-middle'
+// Volume mappings collapse into "+N more" only when they would make the row taller than this
+const VOLUMES_MAX_PX = 64
 
 const HEALTH = {
   healthy: { label: 'Healthy', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
@@ -101,7 +103,6 @@ export default function ContainerRow({
   onUpdate,
   onCopy,
 }: Props) {
-  const [expanded, setExpanded] = useState(false)
   const [iconFailed, setIconFailed] = useState(false)
   const active = isActive(c)
   const state = STATE[c.state] ?? STATE.exited
@@ -109,7 +110,6 @@ export default function ContainerRow({
   // Prefer the limit configured on the container; otherwise Docker reports the host RAM
   const memLimit = c.memLimitConfigured || c.memLimit
   const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
-  const visibleVolumes = expanded ? c.volumes : c.volumes.slice(0, 3)
   const hostNet = c.network === 'host'
   const published = c.ports.filter((p) => p.hostPort)
 
@@ -319,31 +319,7 @@ export default function ContainerRow({
           {c.volumes.length === 0 ? (
             <span className="text-xs text-muted">—</span>
           ) : (
-            <div className="space-y-1">
-              {visibleVolumes.map((v) => (
-                <div key={v.container} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-[11px] leading-relaxed break-all">
-                  <span className="shrink-0 rounded bg-amber-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300" title="Path on the host (or Docker volume name)">
-                    Host
-                  </span>
-                  <span className="text-muted">{v.host}</span>
-                  <span className="text-muted">→</span>
-                  <span className="shrink-0 rounded bg-sky-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-sky-700 uppercase dark:text-sky-300" title="Path inside the container">
-                    Container
-                  </span>
-                  <span className="text-fg">{v.container}</span>
-                </div>
-              ))}
-              {c.volumes.length > 3 && (
-                <button
-                  type="button"
-                  onClick={() => setExpanded((e) => !e)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
-                >
-                  {expanded ? 'Show less' : `+${c.volumes.length - 3} more`}
-                  <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                </button>
-              )}
-            </div>
+            <VolumeList volumes={c.volumes} />
           )}
         </td>
       )}
@@ -405,5 +381,67 @@ export default function ContainerRow({
         <div className="mt-0.5 text-muted">Created {timeAgo(c.createdAt)} ago</div>
       </td>
     </tr>
+  )
+}
+
+/**
+ * Volume mappings with their Host / Container badges. Every mapping is shown when they fit in
+ * VOLUMES_MAX_PX; long paths that would make the row too tall are cut after the last mapping
+ * that fits, with a "+N more" toggle.
+ */
+function VolumeList({ volumes }: { volumes: VolumeMapping[] }) {
+  const [expanded, setExpanded] = useState(false)
+  // clip: height to show (null = everything fits), hidden: mappings cut off
+  const [fit, setFit] = useState<{ clip: number | null; hidden: number }>({ clip: null, hidden: 0 })
+  const inner = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = inner.current
+    if (!el) return
+    // Measures the natural (unclipped) list; runs again when the column width changes
+    const observer = new ResizeObserver(() => {
+      const top = el.getBoundingClientRect().top
+      const bottoms = [...el.children].map((child) => child.getBoundingClientRect().bottom - top)
+      const fitting = bottoms.filter((b) => b <= VOLUMES_MAX_PX + 1).length
+      setFit(
+        fitting >= bottoms.length
+          ? { clip: null, hidden: 0 }
+          : { clip: Math.ceil(bottoms[Math.max(fitting, 1) - 1]), hidden: bottoms.length - Math.max(fitting, 1) },
+      )
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [volumes])
+
+  return (
+    <div>
+      <div className="overflow-hidden" style={!expanded && fit.clip !== null ? { maxHeight: fit.clip } : undefined}>
+        <div ref={inner} className="space-y-1">
+          {volumes.map((v) => (
+            <div key={v.container} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 font-mono text-[11px] leading-relaxed break-all">
+              <span className="shrink-0 rounded bg-amber-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300" title="Path on the host (or Docker volume name)">
+                Host
+              </span>
+              <span className="text-muted">{v.host}</span>
+              <span className="text-muted">→</span>
+              <span className="shrink-0 rounded bg-sky-500/10 px-1 font-sans text-[9px] font-semibold tracking-wide text-sky-700 uppercase dark:text-sky-300" title="Path inside the container">
+                Container
+              </span>
+              <span className="text-fg">{v.container}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {fit.hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          {expanded ? 'Show less' : `+${fit.hidden} more`}
+          <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+    </div>
   )
 }

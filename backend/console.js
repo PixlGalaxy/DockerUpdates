@@ -16,13 +16,15 @@ function reject(socket, code, text) {
 }
 
 /**
- * auth: { userFor(req) -> username | null, sameOrigin(req) -> boolean, clientIp(req) -> string }
+ * auth: { userFor(req) -> username | null, sameOrigin(req) -> boolean, clientIp(req) -> string,
+ *         banned(req) -> boolean }
  */
 export function attachConsole(server, auth) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   server.on('upgrade', (req, socket, head) => {
     const match = req.url?.match(PATH_RE);
+    if (auth.banned?.(req)) return reject(socket, 403, 'Forbidden');
     if (!match) return reject(socket, 404, 'Not Found');
     // Browsers always send Origin on WebSockets: blocks cross-site WebSocket hijacking
     if (!auth.sameOrigin(req)) return reject(socket, 403, 'Forbidden');

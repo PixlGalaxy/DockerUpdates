@@ -23,6 +23,16 @@ import type {
   UpdateAllSummary,
   UpdateResult,
 } from './types'
+import type {
+  AdminOverview,
+  IpAccessInfo,
+  LogChannel,
+  LogLevel,
+  LogPage,
+  SecurityInfo,
+  SecurityValues,
+  SystemInfo,
+} from './adminTypes'
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -113,4 +123,29 @@ export const api = {
   previewSchedule: (schedule: Schedule) => post<SchedulePreview>('/api/schedule/preview', schedule),
   cleanupPreview: (mode?: string) => request<CleanupPreview>(`/api/cleanup/preview${mode ? `?mode=${mode}` : ''}`),
   runCleanup: () => post<CleanupResult>('/api/cleanup/run'),
+}
+
+export const adminApi = {
+  overview: () => request<AdminOverview>('/api/admin/overview'),
+  revokeSession: (id: string) => post<Ok>(`/api/admin/sessions/${id}/revoke`),
+  revokeOtherSessions: () => post<{ revoked: number }>('/api/admin/sessions/revoke-others'),
+
+  logs: (limit: number, page: number, filter: { channel?: LogChannel; level?: LogLevel } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit), page: String(page) })
+    if (filter.channel) q.set('channel', filter.channel)
+    if (filter.level) q.set('level', filter.level)
+    return request<LogPage>(`/api/admin/logs?${q}`)
+  },
+  logsStreamUrl: (after: number) => `/api/admin/logs/stream?after=${after}`,
+
+  ipAccess: () => request<IpAccessInfo>('/api/admin/ip-access'),
+  unlock: (key: string) => post<Ok>('/api/admin/ip-access/unlock', { key }),
+  ban: (ip: string, reason?: string) => post<{ ip: string }>('/api/admin/ip-access/bans', { ip, reason }),
+  unban: (ip: string) => post<Ok>('/api/admin/ip-access/bans/remove', { ip }),
+
+  security: () => request<SecurityInfo>('/api/admin/security'),
+  saveSecurity: (values: Partial<SecurityValues>) =>
+    request<SecurityInfo>('/api/admin/security', { method: 'PUT', body: JSON.stringify(values) }),
+
+  system: () => request<SystemInfo>('/api/admin/system'),
 }

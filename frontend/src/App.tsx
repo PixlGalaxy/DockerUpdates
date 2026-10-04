@@ -11,6 +11,7 @@ import type { HostInfo, HostUsage } from './types'
 
 const AutoUpdatePage = lazy(() => import('./pages/AutoUpdatePage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const AdminPage = lazy(() => import('./pages/admin/AdminPage'))
 
 const pageFallback = (
   <div className="flex justify-center py-20 text-muted">
@@ -166,6 +167,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
         <Suspense fallback={pageFallback}>
           {page === 'auto-update' && <AutoUpdatePage toast={toast} onError={handleError} />}
           {page === 'settings' && <SettingsPage toast={toast} onError={handleError} />}
+          {page === 'admin' && <AdminPage toast={toast} onError={handleError} />}
         </Suspense>
       </main>
 

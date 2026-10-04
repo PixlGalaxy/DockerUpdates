@@ -1,7 +1,10 @@
+// First: captures console output (Admin -> Server logs), including messages printed while loading
+import './logBuffer.js';
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { adminRouter, banGuard, bannedUpgrade } from './admin.js';
 import * as auth from './auth.js';
 import { attachConsole } from './console.js';
 import * as dk from './docker.js';
@@ -35,6 +38,8 @@ const VERSION = process.env.APP_VERSION || 'dev';
 // Proxies trusted for X-Forwarded-For / X-Forwarded-Proto (set TRUST_PROXY to the NPM IP).
 app.set('trust proxy', trustProxySetting());
 app.disable('x-powered-by');
+// Banned addresses (Admin -> IP access) get nothing, not even the static files
+app.use(banGuard);
 app.use(securityHeaders);
 app.use(permissionsPolicy);
 app.use('/api', sameOriginOnly);
@@ -68,6 +73,7 @@ app.post('/api/auth/logout', auth.logout);
 app.use('/api', auth.requireAuth);
 app.use('/api', auditLog);
 app.get('/api/auth/me', auth.me);
+app.use('/api/admin', adminRouter);
 
 app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
@@ -219,5 +225,6 @@ attachConsole(server, {
   userFor: auth.userFor,
   sameOrigin: isSameOrigin,
   clientIp: (req) => req.socket.remoteAddress,
+  banned: bannedUpgrade,
 });
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

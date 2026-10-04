@@ -39,9 +39,9 @@ export function useTheme() {
 
 // ---------- Minimal router (History API; the backend serves index.html for any path) ----------
 
-export type Page = 'home' | 'auto-update' | 'settings'
+export type Page = 'home' | 'auto-update' | 'settings' | 'admin'
 
-const PATHS: Record<Page, string> = { home: '/', 'auto-update': '/auto-update', settings: '/settings' }
+const PATHS: Record<Page, string> = { home: '/', 'auto-update': '/auto-update', settings: '/settings', admin: '/admin' }
 
 function pageFromPath(): Page {
   const entry = Object.entries(PATHS).find(([, path]) => path !== '/' && location.pathname.startsWith(path))

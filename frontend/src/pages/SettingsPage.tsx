@@ -1,15 +1,16 @@
-import { Activity, Bell, Brush, Globe2, LoaderCircle, Save, Send, Trash2, Undo2 } from 'lucide-react'
+import { Activity, Bell, Brush, Globe2, LoaderCircle, RefreshCw, Save, Send, Trash2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
 import LanNetworkCard from '../components/LanNetworkCard'
+import SecurityCard from '../components/SecurityCard'
 import SupportCard from '../components/SupportCard'
 import ScheduleEditor from '../components/ScheduleEditor'
 import { selectCls } from '../schedule'
 import type { ToastTone } from '../components/Toasts'
 import { Button, Toggle } from '../components/ui'
-import type { CleanupPreview, Settings } from '../types'
-import { formatBytes } from '../utils'
+import type { AutoUpdateStatus, CleanupPreview, Settings } from '../types'
+import { formatBytes, timeAgo } from '../utils'
 
 interface Props {
   toast: (tone: ToastTone, message: string) => void
@@ -29,6 +30,28 @@ const EVENT_LABELS: { key: keyof N['events']; label: string; description: string
 
 const inputCls = `${selectCls} font-mono text-xs`
 
+const STARTUP_DELAYS = [0, 1, 5, 15, 30, 60]
+const CHECK_INTERVALS: [number, string][] = [
+  [0, 'Never (startup only)'],
+  [15, 'Every 15 minutes'],
+  [30, 'Every 30 minutes'],
+  [60, 'Every hour'],
+  [180, 'Every 3 hours'],
+  [360, 'Every 6 hours'],
+  [720, 'Every 12 hours'],
+  [1440, 'Every day'],
+  [10080, 'Every week'],
+]
+
+/** "5 min", "2 h 10 min" until an ISO date */
+function timeUntil(iso: string): string {
+  const minutes = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60_000))
+  if (minutes < 1) return 'less than a minute'
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  return minutes % 60 ? `${h} h ${minutes % 60} min` : `${h} h`
+}
+
 export default function SettingsPage({ toast, onError }: Props) {
   const [saved, setSaved] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
@@ -37,6 +60,7 @@ export default function SettingsPage({ toast, onError }: Props) {
   const [testing, setTesting] = useState<Channel | null>(null)
   const [preview, setPreview] = useState<CleanupPreview | null>(null)
   const [cleaning, setCleaning] = useState(false)
+  const [checkStatus, setCheckStatus] = useState<Pick<AutoUpdateStatus, 'lastCheck' | 'nextCheck'> | null>(null)
 
   useEffect(() => {
     api.settings().then((s) => {
@@ -44,6 +68,7 @@ export default function SettingsPage({ toast, onError }: Props) {
       setDraft(structuredClone(s))
     }, onError)
     api.timezones().then(setTimezones, () => setTimezones([]))
+    api.autoUpdateStatus().then(setCheckStatus, () => setCheckStatus(null))
   }, [onError])
 
   const cleanupMode = draft?.cleanup.mode
@@ -76,6 +101,7 @@ export default function SettingsPage({ toast, onError }: Props) {
       setSaved(s)
       setDraft(structuredClone(s))
       toast('success', 'Settings saved')
+      api.autoUpdateStatus().then(setCheckStatus, () => undefined)
       return true
     } catch (err) {
       onError(err)
@@ -151,6 +177,59 @@ export default function SettingsPage({ toast, onError }: Props) {
             ))}
           </datalist>
         </SettingRow>
+      </Card>
+
+      <Card
+        title="Update checks"
+        description="Look for new images in the background. This only marks containers as having an update: nothing is updated unless Auto-Update is set to do it."
+        icon={<RefreshCw size={18} />}
+      >
+        <SettingRow
+          label="Check when DockerUpdates starts"
+          description="Runs a check right after the app starts, e.g. after DockerUpdates updated itself, instead of waiting for the next scheduled run."
+        >
+          <div className="flex items-center gap-3">
+            <select
+              className={`${selectCls} w-36 disabled:opacity-40`}
+              disabled={!draft.updateCheck.onStartup}
+              value={draft.updateCheck.startupDelayMinutes}
+              onChange={(e) => setDraft({ ...draft, updateCheck: { ...draft.updateCheck, startupDelayMinutes: Number(e.target.value) } })}
+              title="Delay after startup"
+            >
+              {STARTUP_DELAYS.map((m) => (
+                <option key={m} value={m}>
+                  {m === 0 ? 'Immediately' : `After ${m} min`}
+                </option>
+              ))}
+            </select>
+            <Toggle
+              label="Check when DockerUpdates starts"
+              checked={draft.updateCheck.onStartup}
+              onChange={(onStartup) => setDraft({ ...draft, updateCheck: { ...draft.updateCheck, onStartup } })}
+            />
+          </div>
+        </SettingRow>
+        <SettingRow label="Check interval" description="How often to check every container for a new image after the app has started.">
+          <select
+            className={`${selectCls} w-48`}
+            value={draft.updateCheck.intervalMinutes}
+            onChange={(e) => setDraft({ ...draft, updateCheck: { ...draft.updateCheck, intervalMinutes: Number(e.target.value) } })}
+          >
+            {CHECK_INTERVALS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+        {checkStatus && (
+          <p className="text-xs text-muted">
+            {checkStatus.lastCheck
+              ? `Last check ${timeAgo(checkStatus.lastCheck.at)} ago (${checkStatus.lastCheck.trigger}): ${checkStatus.lastCheck.available} update(s) available, ${checkStatus.lastCheck.upToDate} up to date.`
+              : 'No background check has run yet.'}
+            {checkStatus.nextCheck && ` Next check in ${timeUntil(checkStatus.nextCheck)}.`}
+          </p>
+        )}
       </Card>
 
       <Card title="Notifications" description="Get notified about updates on Discord, Telegram, ntfy or any webhook." icon={<Bell size={18} />}>
@@ -304,6 +383,8 @@ export default function SettingsPage({ toast, onError }: Props) {
           )}
         </div>
       </Card>
+
+      <SecurityCard toast={toast} onError={onError} />
 
       <SupportCard />
 

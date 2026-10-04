@@ -1,4 +1,4 @@
-import { CalendarClock, House, LogOut, Moon, Server, Settings, Sun } from 'lucide-react'
+import { CalendarClock, House, LayoutDashboard, LogOut, Moon, Server, Settings, Sun } from 'lucide-react'
 import type { Page, Theme } from '../hooks'
 import type { HostUsage } from '../types'
 import HostMeters from './HostMeters'
@@ -20,6 +20,7 @@ interface Props {
 const NAV: { page: Page; label: string; icon: typeof House }[] = [
   { page: 'home', label: 'Home', icon: House },
   { page: 'auto-update', label: 'Auto-Update', icon: CalendarClock },
+  { page: 'admin', label: 'Admin Panel', icon: LayoutDashboard },
   { page: 'settings', label: 'Settings', icon: Settings },
 ]
 

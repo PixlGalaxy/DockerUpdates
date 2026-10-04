@@ -1,17 +1,17 @@
 import crypto from 'node:crypto';
+import { getSecurity } from './securitySettings.js';
 import { readJson, writeJson } from './store.js';
 
 const COOKIE = 'du_session';
-const SESSION_HOURS = Number(process.env.SESSION_HOURS) || 12;
-const IDLE_MINUTES = Number(process.env.SESSION_IDLE_MINUTES) || 120;
 // "true" forces the Secure flag (recommended behind HTTPS); otherwise it follows req.secure
 const FORCE_SECURE = process.env.COOKIE_SECURE === 'true';
 
-// Brute-force protection
-const IP_MAX_FAILURES = 5; // per IP...
-const IP_WINDOW_MS = 15 * 60_000; // ...within 15 min -> locked 15 min
-const GLOBAL_MAX_FAILURES = 30; // across all IPs (defeats IP rotation / spoofing)...
-const GLOBAL_WINDOW_MS = 15 * 60_000; // ...within 15 min -> login locked 15 min
+// Session lifetime and brute-force limits are editable in Admin -> Settings (securitySettings.js):
+//   ipMaxFailures failures from one IP within lockoutMinutes -> that IP is locked lockoutMinutes
+//   globalMaxFailures failures from all IPs (defeats IP rotation) -> login locked lockoutMinutes
+const sessionMs = () => getSecurity().sessionHours * 3600_000;
+const idleMs = () => getSecurity().idleMinutes * 60_000;
+const windowMs = () => getSecurity().lockoutMinutes * 60_000;
 const FAILURE_DELAY_MS = 1000;
 
 const USER = process.env.ADMIN_USER;
@@ -87,7 +87,7 @@ const SESSIONS_FILE = 'sessions.json';
 const FINGERPRINT = crypto.createHmac('sha256', SECRET).update(`${USER}\n${PASSWORD}`).digest('hex');
 const hashId = (id) => crypto.createHash('sha256').update(id).digest('hex');
 
-// hash(id) -> { user, created, lastSeen }
+// hash(id) -> { user, created, lastSeen, ip, lastIp, agent }
 const sessions = new Map();
 let dirty = false;
 
@@ -103,13 +103,14 @@ function persistSessions() {
   return writeJson(SESSIONS_FILE, { fingerprint: FINGERPRINT, sessions: Object.fromEntries(sessions) });
 }
 
-const expired = (s, now = Date.now()) =>
-  now - s.created > SESSION_HOURS * 3600_000 || now - s.lastSeen > IDLE_MINUTES * 60_000;
+const expired = (s, now = Date.now()) => now - s.created > sessionMs() || now - s.lastSeen > idleMs();
 
-function createSession(user) {
+const agentOf = (req) => String(req.headers?.['user-agent'] ?? '').slice(0, 300);
+
+function createSession(user, req) {
   const id = crypto.randomBytes(32).toString('base64url');
   const now = Date.now();
-  sessions.set(hashId(id), { user, created: now, lastSeen: now });
+  sessions.set(hashId(id), { user, created: now, lastSeen: now, ip: req.ip, lastIp: req.ip, agent: agentOf(req) });
   void persistSessions();
   return `${id}.${sign(id)}`;
 }
@@ -128,6 +129,7 @@ function sessionFromCookie(req) {
     return null;
   }
   s.lastSeen = Date.now();
+  if (req.ip && s.lastIp !== req.ip) s.lastIp = req.ip;
   dirty = true; // lastSeen is flushed to disk once per minute
   return { id: key, ...s };
 }
@@ -167,13 +169,17 @@ if (!PROXY_PINNED) {
 
 /** Addresses the login lockout applies to for this request. */
 function lockoutKeys(req) {
-  const keys = [req.ip];
   const peer = req.socket?.remoteAddress;
-  if (!PROXY_PINNED && peer && peer !== req.ip) keys.push(`peer:${peer}`);
-  return keys;
+  if (PROXY_PINNED || !peer) return [req.ip];
+  // The connection counter is shared by direct attempts and attempts with a forwarded IP,
+  // so alternating with and without X-Forwarded-For does not reset anything
+  return peer === req.ip ? [`peer:${peer}`] : [req.ip, `peer:${peer}`];
 }
 let globalFailures = [];
 let globalLockedUntil = 0;
+// Most recent failed logins, newest first (Admin dashboard)
+const recentFailures = [];
+const RECENT_FAILURES_MAX = 100;
 
 function lockedFor(req) {
   const now = Date.now();
@@ -186,31 +192,36 @@ function lockedFor(req) {
   return wait;
 }
 
-function registerFailure(req) {
+function registerFailure(req, username) {
   const now = Date.now();
+  const { ipMaxFailures, globalMaxFailures, lockoutMinutes } = getSecurity();
   for (const key of lockoutKeys(req)) {
-    const entry = ipFailures.get(key) ?? { times: [], lockedUntil: 0 };
-    entry.times = entry.times.filter((t) => now - t < IP_WINDOW_MS).concat(now);
-    if (entry.times.length >= IP_MAX_FAILURES) {
-      entry.lockedUntil = now + IP_WINDOW_MS;
+    const entry = ipFailures.get(key) ?? { times: [], lockedUntil: 0, total: 0 };
+    entry.times = entry.times.filter((t) => now - t < windowMs()).concat(now);
+    entry.total = (entry.total ?? 0) + 1;
+    if (entry.times.length >= ipMaxFailures) {
+      entry.lockedUntil = now + windowMs();
       entry.times = [];
-      audit(req, `login locked for ${key} after ${IP_MAX_FAILURES} failed attempts`);
+      audit(req, `login locked for ${key} after ${ipMaxFailures} failed attempts`);
     }
     ipFailures.set(key, entry);
   }
 
-  globalFailures = globalFailures.filter((t) => now - t < GLOBAL_WINDOW_MS).concat(now);
-  if (globalFailures.length >= GLOBAL_MAX_FAILURES) {
-    globalLockedUntil = now + GLOBAL_WINDOW_MS;
+  globalFailures = globalFailures.filter((t) => now - t < windowMs()).concat(now);
+  if (globalFailures.length >= globalMaxFailures) {
+    globalLockedUntil = now + windowMs();
     globalFailures = [];
-    audit(req, `login locked globally after ${GLOBAL_MAX_FAILURES} failed attempts in 15 min`);
+    audit(req, `login locked globally after ${globalMaxFailures} failed attempts in ${lockoutMinutes} min`);
   }
+
+  recentFailures.unshift({ at: new Date(now).toISOString(), ip: req.ip, peer: req.socket?.remoteAddress ?? null, username });
+  if (recentFailures.length > RECENT_FAILURES_MAX) recentFailures.length = RECENT_FAILURES_MAX;
 }
 
 setInterval(() => {
   const now = Date.now();
   for (const [ip, e] of ipFailures) {
-    if (e.lockedUntil < now && e.times.every((t) => now - t > IP_WINDOW_MS)) ipFailures.delete(ip);
+    if (e.lockedUntil < now && e.times.every((t) => now - t > windowMs())) ipFailures.delete(ip);
   }
 }, 10 * 60_000).unref();
 
@@ -230,15 +241,16 @@ export async function login(req, res) {
   const userOk = safeEqual(username, USER);
   const passOk = safeEqual(password, PASSWORD);
   if (!(userOk && passOk)) {
-    registerFailure(req);
-    audit(req, `login failed user="${username.slice(0, 64).replace(/[^\w.@-]/g, '?')}"`);
+    const shown = username.slice(0, 64).replace(/[^\w.@-]/g, '?');
+    registerFailure(req, shown);
+    audit(req, `login failed user="${shown}"`);
     await sleep(FAILURE_DELAY_MS);
     return res.status(400).json({ error: 'Invalid username or password' });
   }
   for (const key of lockoutKeys(req)) ipFailures.delete(key);
-  res.cookie(COOKIE, createSession(USER), {
+  res.cookie(COOKIE, createSession(USER, req), {
     ...cookieOptions(req),
-    maxAge: SESSION_HOURS * 3600_000,
+    maxAge: sessionMs(),
   });
   audit(req, `login ok user="${USER}"`);
   res.json({ user: USER });
@@ -264,5 +276,96 @@ export function requireAuth(req, res, next) {
   const s = sessionFromCookie(req);
   if (!s) return res.status(401).json({ error: 'Unauthorized' });
   req.user = s.user;
+  req.sessionKey = s.id;
   next();
+}
+
+// ---------- Admin panel helpers ----------
+
+// Public id of a session: derived from the stored hash, never usable to sign in
+const publicId = (key) => crypto.createHash('sha256').update(`public:${key}`).digest('hex').slice(0, 16);
+
+/** Active sessions, most recent activity first. `currentKey` marks the caller's own session. */
+export function listSessions(currentKey) {
+  const now = Date.now();
+  return [...sessions.entries()]
+    .filter(([, s]) => !expired(s, now))
+    .map(([key, s]) => ({
+      id: publicId(key),
+      user: s.user,
+      ip: s.ip ?? null,
+      lastIp: s.lastIp ?? s.ip ?? null,
+      agent: s.agent ?? '',
+      created: new Date(s.created).toISOString(),
+      lastSeen: new Date(s.lastSeen).toISOString(),
+      expires: new Date(Math.min(s.created + sessionMs(), s.lastSeen + idleMs())).toISOString(),
+      current: key === currentKey,
+    }))
+    .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+}
+
+/** Signs out one session by its public id. Returns false if it does not exist. */
+export function revokeSession(id) {
+  for (const key of sessions.keys()) {
+    if (publicId(key) === id) {
+      sessions.delete(key);
+      void persistSessions();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Signs out every session except the caller's. Returns how many were removed. */
+export function revokeOtherSessions(currentKey) {
+  let count = 0;
+  for (const key of [...sessions.keys()]) {
+    if (key !== currentKey) {
+      sessions.delete(key);
+      count++;
+    }
+  }
+  if (count) void persistSessions();
+  return count;
+}
+
+/** Locked addresses, failure counters and recent failed logins. */
+export function loginProtectionState() {
+  const now = Date.now();
+  const locked = [];
+  const watching = [];
+  for (const [key, e] of ipFailures) {
+    const recent = e.times.filter((t) => now - t < windowMs()).length;
+    const row = {
+      key,
+      ip: key.replace(/^peer:/, ''),
+      viaConnection: key.startsWith('peer:'),
+      recentFailures: recent,
+      totalFailures: e.total ?? recent,
+      retryAfterSeconds: e.lockedUntil > now ? Math.ceil((e.lockedUntil - now) / 1000) : 0,
+    };
+    if (row.retryAfterSeconds) locked.push(row);
+    else if (recent) watching.push(row);
+  }
+  return {
+    locked: locked.sort((a, b) => b.retryAfterSeconds - a.retryAfterSeconds),
+    watching: watching.sort((a, b) => b.recentFailures - a.recentFailures),
+    global: {
+      recentFailures: globalFailures.filter((t) => now - t < windowMs()).length,
+      retryAfterSeconds: globalLockedUntil > now ? Math.ceil((globalLockedUntil - now) / 1000) : 0,
+    },
+    recentFailures: recentFailures.slice(0, 50),
+    proxyPinned: PROXY_PINNED,
+  };
+}
+
+/** Lifts a lockout: a `key` from loginProtectionState, or 'global'. */
+export function clearLockout(key) {
+  if (key === 'global') {
+    const was = globalLockedUntil > Date.now() || globalFailures.length > 0;
+    globalLockedUntil = 0;
+    globalFailures = [];
+    return was;
+  }
+  return ipFailures.delete(key);
 }

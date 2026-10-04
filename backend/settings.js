@@ -33,6 +33,14 @@ export const DEFAULTS = {
     ntfy: { enabled: false, url: '', token: '' },
     webhook: { enabled: false, url: '', secret: '' },
   },
+  // Background update checks: only refresh the "update available" badges (nothing is
+  // updated unless Auto-Update is configured to do it)
+  updateCheck: {
+    onStartup: true,
+    startupDelayMinutes: 1,
+    // 0 = no periodic check
+    intervalMinutes: 360,
+  },
   network: {
     // Name of the macvlan / ipvlan network created from Settings ('' = not enabled).
     // Only set by enableLan(); cannot be changed or removed from the UI.
@@ -62,6 +70,15 @@ const SECRETS = [
 ];
 
 let settings = null;
+const changeListeners = new Set();
+
+/** Called with (next, previous) after settings are saved. */
+export function onSettingsChange(fn) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+export const CHECK_INTERVALS = [0, 15, 30, 60, 180, 360, 720, 1440, 10080];
 
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -152,6 +169,14 @@ function validate(s) {
   validateUrl(n.ntfy.url, 'ntfy URL');
   validateUrl(n.webhook.url, 'Webhook URL');
   if (!['dangling', 'unused'].includes(s.cleanup.mode)) throw bad('Invalid cleanup mode');
+  const uc = s.updateCheck;
+  uc.onStartup = Boolean(uc.onStartup);
+  uc.startupDelayMinutes = Number(uc.startupDelayMinutes);
+  uc.intervalMinutes = Number(uc.intervalMinutes);
+  if (!Number.isInteger(uc.startupDelayMinutes) || uc.startupDelayMinutes < 0 || uc.startupDelayMinutes > 60) {
+    throw bad('Startup check delay must be between 0 and 60 minutes');
+  }
+  if (!CHECK_INTERVALS.includes(uc.intervalMinutes)) throw bad('Invalid update check interval');
   const max = Number(s.health.maxRestarts);
   if (!Number.isInteger(max) || max < 2 || max > 50) throw bad('Max restarts must be between 2 and 50');
   s.health.maxRestarts = max;
@@ -176,7 +201,15 @@ export async function updateSettings(patch) {
   next.autoUpdate.stopTimeout = Number(next.autoUpdate.stopTimeout);
   next.autoUpdate.cooldownDays = Number(next.autoUpdate.cooldownDays ?? 0);
   validate(next);
+  const previous = settings;
   settings = next;
   await writeJson(FILE, settings);
+  for (const fn of changeListeners) {
+    try {
+      fn(settings, previous);
+    } catch (err) {
+      console.error('Settings listener failed:', err.message);
+    }
+  }
   return publicSettings();
 }

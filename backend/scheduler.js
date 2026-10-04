@@ -3,12 +3,12 @@
 import { cronMatches, nextRuns, scheduleToCron } from './cron.js';
 import * as dk from './docker.js';
 import { notify } from './notify.js';
-import { getSettings } from './settings.js';
+import { getSettings, onSettingsChange } from './settings.js';
 import { readJson, writeJson } from './store.js';
 
 const STATE_FILE = 'scheduler-state.json';
 
-// { lastRun: { at, trigger, checked, available, updated, failed }, lastCleanup, notified: { name: version } }
+// { lastRun: { at, trigger, checked, available, updated, failed }, lastCleanup, lastCheck, notified: { name: version } }
 let state = null;
 let running = null; // description of the job in progress
 const queue = [];
@@ -168,10 +168,65 @@ async function tick() {
   }
 }
 
+// ---------- Background update checks ----------
+// Refresh the "update available" status of every container: at startup (so a freshly
+// updated DockerUpdates does not wait for the next scheduled run) and then every
+// `intervalMinutes`. Checks only: updates still follow the Auto-Update settings.
+
+let checkTimer = null;
+let nextCheckAt = null;
+let pendingTrigger = null;
+
+function scheduleCheck(delayMs, trigger) {
+  clearTimeout(checkTimer);
+  pendingTrigger = trigger;
+  nextCheckAt = new Date(Date.now() + delayMs).toISOString();
+  checkTimer = setTimeout(() => void runBackgroundCheck(trigger), delayMs);
+  checkTimer.unref();
+}
+
+function scheduleNextInterval() {
+  const minutes = getSettings().updateCheck.intervalMinutes;
+  if (minutes > 0) scheduleCheck(minutes * 60_000, 'interval');
+  else {
+    clearTimeout(checkTimer);
+    nextCheckAt = null;
+    pendingTrigger = null;
+  }
+}
+
+async function runBackgroundCheck(trigger) {
+  nextCheckAt = null;
+  pendingTrigger = null;
+  try {
+    const summary = await enqueue(`update check (${trigger})`, () => dk.checkAllUpdates());
+    state.lastCheck = { at: new Date().toISOString(), trigger, ...summary };
+    await saveState();
+    console.log(`Update check (${trigger}): ${summary.available} update(s) available, ${summary.upToDate} up to date`
+      + `${summary.failed + summary.authRequired ? `, ${summary.failed + summary.authRequired} failed` : ''}.`);
+  } catch (err) {
+    console.error(`Update check (${trigger}) failed:`, err.message);
+  } finally {
+    scheduleNextInterval();
+  }
+}
+
 export async function startScheduler() {
   await loadState();
   // Check a few times per minute so a slow tick never skips a minute
   setInterval(() => void tick(), 15_000).unref();
+
+  const uc = getSettings().updateCheck;
+  if (uc.onStartup) scheduleCheck(uc.startupDelayMinutes * 60_000, 'startup');
+  else scheduleNextInterval();
+
+  // A new interval applies right away, counted from now
+  onSettingsChange((next, previous) => {
+    if (next.updateCheck.intervalMinutes === previous?.updateCheck?.intervalMinutes) return;
+    // A pending startup check schedules the interval itself once it has run
+    if (pendingTrigger === 'startup') return;
+    scheduleNextInterval();
+  });
 }
 
 // ---------- API helpers ----------
@@ -194,6 +249,8 @@ export async function status() {
     queued: queue.length,
     lastRun: state.lastRun,
     lastCleanup: state.lastCleanup,
+    lastCheck: state.lastCheck ?? null,
+    nextCheck: nextCheckAt,
     nextRun: s.autoUpdate.enabled ? safeNext(scheduleToCron(s.autoUpdate.schedule)) : null,
     nextCleanup: s.cleanup.scheduled ? safeNext(scheduleToCron(s.cleanup.schedule)) : null,
     containers: containers.map((c) => {

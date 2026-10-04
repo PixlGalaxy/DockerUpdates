@@ -225,6 +225,13 @@ export interface Settings {
     ntfy: { enabled: boolean; url: string; token: string }
     webhook: { enabled: boolean; url: string; secret: string }
   }
+  /** Background checks that only refresh the "update available" status */
+  updateCheck: {
+    onStartup: boolean
+    startupDelayMinutes: number
+    /** 0 = no periodic check */
+    intervalMinutes: number
+  }
   network: {
     /** macvlan / ipvlan network enabled in Settings ('' = not enabled) */
     lanNetwork: string
@@ -263,6 +270,8 @@ export interface AutoUpdateStatus {
   queued: number
   lastRun: RunResult | null
   lastCleanup: { at: string; count: number; freed: number } | null
+  lastCheck: { at: string; trigger: 'startup' | 'interval'; upToDate: number; available: number; authRequired: number; failed: number; local: number } | null
+  nextCheck: string | null
   nextRun: string | null
   nextCleanup: string | null
   containers: {
