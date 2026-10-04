@@ -26,8 +26,10 @@ export function containerPlan(name, s = getSettings()) {
   const au = s.autoUpdate;
   const own = au.containers[name];
   const mode = own?.mode ?? (au.applyToAll ? 'global' : 'off');
-  if (mode === 'custom') return { mode, action: own.action, cron: scheduleToCron(own.schedule) };
-  if (mode === 'global') return { mode, action: au.action, cron: scheduleToCron(au.schedule) };
+  if (mode === 'custom') {
+    return { mode, action: own.action, cron: scheduleToCron(own.schedule), cooldownDays: own.cooldownDays ?? au.cooldownDays };
+  }
+  if (mode === 'global') return { mode, action: au.action, cron: scheduleToCron(au.schedule), cooldownDays: au.cooldownDays };
   return { mode: 'off' };
 }
 
@@ -38,7 +40,7 @@ export function containerPlan(name, s = getSettings()) {
 async function runAutoUpdate(targets, trigger = 'auto') {
   await loadState();
   const host = await dk.hostName().catch(() => '');
-  const result = { at: new Date().toISOString(), trigger, checked: 0, available: 0, updated: 0, failed: 0 };
+  const result = { at: new Date().toISOString(), trigger, checked: 0, available: 0, updated: 0, failed: 0, deferred: 0 };
   const toUpdate = [];
   const availableItems = [];
   const failedItems = [];
@@ -48,7 +50,19 @@ async function runAutoUpdate(targets, trigger = 'auto') {
     result.checked++;
     if (r.status === 'update-available') {
       result.available++;
-      if (t.action === 'update') toUpdate.push(t.id);
+      // Cooldown: wait until the new image is old enough (avoids broken day-one releases)
+      const readyAt = r.published && t.cooldownDays ? Date.parse(r.published) + t.cooldownDays * 86_400_000 : 0;
+      const waiting = t.action === 'update' && trigger === 'auto' && readyAt > Date.now();
+      if (waiting) {
+        result.deferred++;
+        if (state.notified[t.name] !== r.to) {
+          availableItems.push({
+            name: t.name, image: r.image, from: r.from, to: r.to,
+            note: `auto-update after ${new Date(readyAt).toISOString().slice(0, 10)} (${t.cooldownDays}-day cooldown)`,
+          });
+          state.notified[t.name] = r.to;
+        }
+      } else if (t.action === 'update') toUpdate.push(t.id);
       else if (state.notified[t.name] !== r.to) {
         // Notify each new version only once
         availableItems.push({ name: t.name, image: r.image, from: r.from, to: r.to });
@@ -133,7 +147,7 @@ async function tick() {
       for (const c of containers) {
         const plan = containerPlan(c.name, s);
         if (plan.mode === 'off' || c.updateStatus === 'local') continue;
-        if (cronMatches(plan.cron, now, tz)) due.push({ id: c.id, name: c.name, action: plan.action });
+        if (cronMatches(plan.cron, now, tz)) due.push({ id: c.id, name: c.name, action: plan.action, cooldownDays: plan.cooldownDays });
       }
       if (due.length) {
         enqueue(`auto-update (${due.length})`, () => runAutoUpdate(due)).catch(() => {});
@@ -193,6 +207,8 @@ export async function status() {
         local: c.updateStatus === 'local',
         mode: plan.mode,
         action: plan.action ?? null,
+        cooldownDays: plan.cooldownDays ?? 0,
+        health: c.health,
         nextRun: s.autoUpdate.enabled && plan.mode !== 'off' && c.updateStatus !== 'local' ? safeNext(plan.cron) : null,
       };
     }),
@@ -205,7 +221,7 @@ export async function runNow() {
   const targets = (await dk.listContainers())
     .map((c) => ({ c, plan: containerPlan(c.name, s) }))
     .filter(({ c, plan }) => plan.mode !== 'off' && c.updateStatus !== 'local')
-    .map(({ c, plan }) => ({ id: c.id, name: c.name, action: plan.action }));
+    .map(({ c, plan }) => ({ id: c.id, name: c.name, action: plan.action, cooldownDays: plan.cooldownDays }));
   return enqueue(`manual run (${targets.length})`, () => runAutoUpdate(targets, 'manual'));
 }
 

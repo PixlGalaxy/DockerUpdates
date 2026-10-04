@@ -3,10 +3,11 @@ import {
   CalendarClock,
   CircleCheck,
   CloudDownload,
-  HardDrive,
+  Hourglass,
   LoaderCircle,
   Play,
   Save,
+  Settings2,
   ShieldCheck,
   Timer,
   Undo2,
@@ -14,6 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
+import Modal from '../components/Modal'
 import ScheduleEditor from '../components/ScheduleEditor'
 import { describeSchedule, selectCls } from '../schedule'
 import type { ToastTone } from '../components/Toasts'
@@ -39,7 +41,8 @@ export default function AutoUpdatePage({ toast, onError }: Props) {
   const [status, setStatus] = useState<AutoUpdateStatus | null>(null)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [filter, setFilter] = useState<'all' | 'global' | 'custom' | 'off'>('all')
 
   const loadStatus = useCallback(() => api.autoUpdateStatus().then(setStatus, onError), [onError])
 
@@ -146,7 +149,7 @@ export default function AutoUpdatePage({ toast, onError }: Props) {
           label="Last run"
           value={
             status?.lastRun
-              ? `${timeAgo(status.lastRun.at)} ago · ${status.lastRun.updated} updated${status.lastRun.failed ? `, ${status.lastRun.failed} failed` : ''}`
+              ? `${timeAgo(status.lastRun.at)} ago · ${status.lastRun.updated} updated${status.lastRun.deferred ? `, ${status.lastRun.deferred} in cooldown` : ''}${status.lastRun.failed ? `, ${status.lastRun.failed} failed` : ''}`
               : 'Never'
           }
           action={
@@ -186,83 +189,166 @@ export default function AutoUpdatePage({ toast, onError }: Props) {
                 <span className="text-xs text-muted">s</span>
               </div>
             </SettingRow>
+            <SettingRow
+              label="Cooldown"
+              description="Only auto-update to images published at least this many days ago, so broken day-one releases are skipped. You still get notified right away."
+            >
+              <CooldownInput value={draft.cooldownDays} onChange={(cooldownDays) => set({ cooldownDays })} />
+            </SettingRow>
           </div>
         </div>
       </Card>
 
-      <Card title="Per-container" description="Use the global schedule, set a custom time for a container, or exclude it." icon={<ShieldCheck size={18} />}>
-        <div className="-mx-5 -my-5 divide-y divide-line">
-          {(status?.containers ?? []).map((c) => {
-            const cfg = containerConfig(c.name)
-            const open = expanded === c.name && cfg.mode === 'custom'
-            return (
-              <div key={c.id} className="px-5 py-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  {c.icon ? (
-                    <img src={c.icon} alt="" className="size-8 rounded-lg border border-line bg-white object-contain p-0.5" />
-                  ) : (
-                    <div className={`flex size-8 items-center justify-center rounded-lg bg-gradient-to-br text-[11px] font-semibold text-white uppercase ${gradientFor(c.name)}`}>
-                      {c.name.slice(0, 2)}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">
-                      {c.name}
-                      {c.isSelf && <span className="ml-2 text-[10px] font-semibold text-sky-600 uppercase dark:text-sky-400">this app</span>}
-                    </div>
-                    <div className="truncate text-xs text-muted">
-                      {c.local ? (
-                        <span className="inline-flex items-center gap-1">
-                          <HardDrive size={11} /> Local image, cannot be updated
-                        </span>
-                      ) : cfg.mode === 'off' ? (
-                        'Excluded from automatic updates'
-                      ) : cfg.mode === 'custom' && cfg.schedule ? (
-                        `${describeSchedule(cfg.schedule)} · ${cfg.action === 'notify' ? 'notify only' : 'auto-update'}`
-                      ) : (
-                        `Global · ${describeSchedule(draft.schedule)}`
-                      )}
-                      {!dirty && c.nextRun && <span> · next {fmt(c.nextRun)}</span>}
-                    </div>
-                  </div>
-                  <select
-                    disabled={c.local}
-                    className={`${selectCls} w-36`}
-                    value={c.local ? 'off' : cfg.mode}
-                    onChange={(e) => {
-                      const mode = e.target.value as ContainerAutoUpdate['mode']
-                      setContainer(c.name, mode === 'custom' ? { mode, action: cfg.action ?? draft.action, schedule: cfg.schedule ?? structuredClone(draft.schedule) } : { mode })
-                      if (mode === 'custom') setExpanded(c.name)
-                    }}
+      <Card
+        title="Per-container"
+        description="Global follows the schedule above, Custom has its own time, Off is never updated automatically."
+        icon={<ShieldCheck size={18} />}
+        actions={
+          <div className="inline-flex rounded-lg border border-line bg-surface-2/60 p-0.5 text-xs">
+            {(['all', 'global', 'custom', 'off'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={`rounded-md px-2.5 py-1 font-medium capitalize ${filter === f ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'}`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        }
+      >
+        {!status ? (
+          <div className="flex justify-center py-8 text-muted">
+            <LoaderCircle className="animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2.5">
+            {status.containers
+              .filter((c) => filter === 'all' || (c.local ? 'off' : containerConfig(c.name).mode) === filter)
+              .map((c) => {
+                const cfg = containerConfig(c.name)
+                const mode = c.local ? 'off' : cfg.mode
+                const setMode = (m: ContainerAutoUpdate['mode']) => {
+                  if (m === 'custom') {
+                    setContainer(c.name, {
+                      mode: m,
+                      action: cfg.action ?? draft.action,
+                      schedule: cfg.schedule ?? structuredClone(draft.schedule),
+                      cooldownDays: cfg.cooldownDays,
+                    })
+                    setEditing(c.name)
+                  } else setContainer(c.name, { mode: m })
+                }
+                return (
+                  <div
+                    key={c.id}
+                    className={`flex flex-col gap-2 rounded-xl border p-2.5 transition-colors ${
+                      mode === 'off' ? 'border-line bg-surface-2/30' : mode === 'custom' ? 'border-violet-500/40 bg-violet-500/[0.04]' : 'border-sky-500/30 bg-sky-500/[0.03]'
+                    }`}
                   >
-                    <option value="global">Global</option>
-                    <option value="custom">Custom</option>
-                    <option value="off">Off</option>
-                  </select>
-                  {cfg.mode === 'custom' && !c.local && (
-                    <Button size="xs" onClick={() => setExpanded(open ? null : c.name)}>
-                      {open ? 'Close' : 'Configure'}
-                    </Button>
-                  )}
-                </div>
-                {open && cfg.schedule && (
-                  <div className="mt-3 space-y-3 rounded-xl border border-line bg-surface-2/40 p-4">
-                    <SettingRow label="Action">
-                      <Segmented value={cfg.action ?? 'update'} onChange={(action) => setContainer(c.name, { ...cfg, action })} />
-                    </SettingRow>
-                    <ScheduleEditor compact value={cfg.schedule} onChange={(schedule) => setContainer(c.name, { ...cfg, schedule })} />
+                    <div className="flex items-center gap-2">
+                      {c.icon ? (
+                        <img src={c.icon} alt="" className="size-7 shrink-0 rounded-md border border-line bg-white object-contain p-0.5" />
+                      ) : (
+                        <div className={`flex size-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br text-[10px] font-semibold text-white uppercase ${gradientFor(c.name)}`}>
+                          {c.name.slice(0, 2)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] leading-tight font-medium" title={c.name}>
+                          {c.name}
+                        </div>
+                        <div className="truncate text-[11px] leading-tight text-muted" title={c.image}>
+                          {c.local ? 'Local image' : c.isSelf ? 'This app' : c.image.split('/').pop()}
+                        </div>
+                      </div>
+                      {mode === 'custom' && (
+                        <button
+                          type="button"
+                          aria-label={`Configure ${c.name}`}
+                          title="Configure schedule"
+                          onClick={() => setEditing(c.name)}
+                          className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-fg"
+                        >
+                          <Settings2 size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 rounded-lg border border-line bg-surface p-0.5 text-[11px] font-medium">
+                      {(['global', 'custom', 'off'] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          disabled={c.local}
+                          onClick={() => setMode(m)}
+                          className={`rounded-md py-1 capitalize transition-colors disabled:cursor-not-allowed ${
+                            mode === m
+                              ? m === 'off'
+                                ? 'bg-zinc-500/15 text-fg'
+                                : m === 'custom'
+                                  ? 'bg-violet-600 text-white'
+                                  : 'bg-sky-600 text-white'
+                              : 'text-muted hover:text-fg'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="truncate text-[11px] text-muted" title={mode === 'custom' && cfg.schedule ? describeSchedule(cfg.schedule) : undefined}>
+                      {mode === 'off'
+                        ? c.local
+                          ? 'Cannot be updated from a registry'
+                          : 'Not updated automatically'
+                        : mode === 'custom' && cfg.schedule
+                          ? `${describeSchedule(cfg.schedule)} · ${cfg.action === 'notify' ? 'notify' : 'update'}`
+                          : `${draft.action === 'notify' ? 'Notify' : 'Update'} · global`}
+                      {!dirty && c.nextRun && mode !== 'off' && <span className="block">Next: {fmt(c.nextRun)}</span>}
+                    </div>
                   </div>
-                )}
+                )
+              })}
+          </div>
+        )}
+      </Card>
+
+      {editing && draft.containers[editing]?.mode === 'custom' && (
+        <Modal
+          title={`Auto-update · ${editing}`}
+          subtitle="Custom schedule for this container"
+          icon={<CalendarClock size={18} />}
+          size="lg"
+          onClose={() => setEditing(null)}
+          actions={
+            <Button size="xs" variant="primary" onClick={() => setEditing(null)}>
+              Done
+            </Button>
+          }
+        >
+          {(() => {
+            const cfg = draft.containers[editing]
+            return (
+              <div className="space-y-5">
+                <SettingRow label="Action">
+                  <Segmented value={cfg.action ?? 'update'} onChange={(action) => setContainer(editing, { ...cfg, action })} />
+                </SettingRow>
+                {cfg.schedule && <ScheduleEditor value={cfg.schedule} onChange={(schedule) => setContainer(editing, { ...cfg, schedule })} />}
+                <SettingRow label="Cooldown" description={`Leave empty to use the global value (${draft.cooldownDays} days).`}>
+                  <CooldownInput
+                    value={cfg.cooldownDays}
+                    placeholder={String(draft.cooldownDays)}
+                    onChange={(cooldownDays) => setContainer(editing, { ...cfg, cooldownDays })}
+                  />
+                </SettingRow>
+                <p className="text-xs text-muted">Changes are applied when you press Apply on the page.</p>
               </div>
             )
-          })}
-          {!status && (
-            <div className="flex justify-center py-8 text-muted">
-              <LoaderCircle className="animate-spin" />
-            </div>
-          )}
-        </div>
-      </Card>
+          })()}
+        </Modal>
+      )}
 
       {dirty && (
         <div className="sticky bottom-4 z-20 flex items-center justify-between gap-3 rounded-2xl border border-sky-500/30 bg-surface/95 px-4 py-3 shadow-xl backdrop-blur">
@@ -277,6 +363,32 @@ export default function AutoUpdatePage({ toast, onError }: Props) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function CooldownInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | undefined
+  onChange: (v: number | undefined) => void
+  placeholder?: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Hourglass size={14} className="text-muted" />
+      <input
+        type="number"
+        min={0}
+        max={365}
+        value={value ?? ''}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value === '' ? (placeholder !== undefined ? undefined : 0) : Number(e.target.value))}
+        className={`${selectCls} w-24`}
+      />
+      <span className="text-xs text-muted">days</span>
     </div>
   )
 }

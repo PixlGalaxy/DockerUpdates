@@ -11,6 +11,7 @@ import type {
   CleanupResult,
   HistoryEntry,
   HostInfo,
+  HostUsage,
   RunResult,
   Schedule,
   SchedulePreview,
@@ -82,6 +83,7 @@ export const api = {
   checkExtraParams: (extraParams: string) =>
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
   host: () => request<HostInfo>('/api/host'),
+  hostUsage: () => request<HostUsage>('/api/host/usage'),
 
   history: (container?: string) =>
     request<HistoryEntry[]>(`/api/history${container ? `?container=${encodeURIComponent(container)}` : ''}`),

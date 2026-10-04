@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import * as auth from './auth.js';
 import { attachConsole } from './console.js';
 import * as dk from './docker.js';
+import { startHealthMonitor } from './health.js';
 import { listHistory } from './history.js';
+import { hostUsage } from './hostUsage.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import * as scheduler from './scheduler.js';
@@ -73,6 +75,7 @@ app.post('/api/containers', handle(async (req) => ({ id: await dk.createContaine
 // Live CPU / memory, polled every second by the UI
 app.get('/api/stats', handle(() => dk.getStats()));
 app.get('/api/host', handle(() => dk.hostInfo()));
+app.get('/api/host/usage', handle(() => hostUsage()));
 app.get('/api/networks', handle(() => dk.listNetworks()));
 app.post('/api/extra-params/check', handle((req) => dk.checkExtraParams(req.body?.extraParams ?? '')));
 
@@ -168,6 +171,7 @@ app.use((err, _req, res, _next) => {
 
 await Promise.all([initIcons(), loadSettings()]);
 await scheduler.startScheduler();
+startHealthMonitor();
 
 const server = http.createServer(app);
 attachConsole(server, {

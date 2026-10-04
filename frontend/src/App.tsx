@@ -7,7 +7,7 @@ import Login from './components/Login'
 import Toasts, { type Toast, type ToastTone } from './components/Toasts'
 import { usePage, useTheme } from './hooks'
 import HomePage from './pages/HomePage'
-import type { HostInfo } from './types'
+import type { HostInfo, HostUsage } from './types'
 
 const AutoUpdatePage = lazy(() => import('./pages/AutoUpdatePage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
@@ -55,6 +55,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
   const [hostName, setHostName] = useState('')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [selfUpdating, setSelfUpdating] = useState(false)
+  const [usage, setUsage] = useState<HostUsage | null>(null)
   const toastId = useRef(0)
 
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
@@ -89,6 +90,25 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
       },
       () => setHost(null),
     )
+  }, [])
+
+  // Host CPU / RAM in the header, every 2 s while the tab is visible
+  useEffect(() => {
+    let inFlight = false
+    const tick = async () => {
+      if (inFlight || document.visibilityState !== 'visible') return
+      inFlight = true
+      try {
+        setUsage(await api.hostUsage())
+      } catch {
+        // keep the last value
+      } finally {
+        inFlight = false
+      }
+    }
+    void tick()
+    const t = setInterval(tick, 2000)
+    return () => clearInterval(t)
   }, [])
 
   /** DockerUpdates is being recreated by its helper container: wait for it to come back, then reload. */
@@ -126,6 +146,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
         user={user}
         page={page}
         theme={theme}
+        usage={usage}
         onNavigate={navigate}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         onLogout={logout}

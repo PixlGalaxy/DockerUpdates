@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import { buildCreateOptions, specFromInspect, validateSpec } from './containerSpec.js';
 import { describeExtraParams } from './extraParams.js';
+import { suppressHealthAlerts } from './health.js';
 import { addHistory, renameInHistory } from './history.js';
 import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
@@ -164,9 +165,15 @@ export async function listContainers() {
         autostart: inspect.HostConfig.RestartPolicy?.Name === 'always'
           || inspect.HostConfig.RestartPolicy?.Name === 'unless-stopped',
         startedAt: inspect.State.StartedAt,
+        // Only for images with a HEALTHCHECK: 'healthy' | 'unhealthy' | 'starting'
+        health: inspect.State.Health?.Status ?? null,
+        healthLog: inspect.State.Health?.Log?.at(-1)?.Output?.trim().slice(0, 300) || undefined,
+        exitCode: info.State === 'exited' ? inspect.State.ExitCode : undefined,
+        restartCount: inspect.RestartCount ?? 0,
         createdAt: inspect.Created,
         updateStatus: isLocalImageRef(inspect.Config.Image) ? 'local' : update?.status ?? 'unknown',
         updateMessage: update?.message,
+        updatePublished: update?.published,
         updateFrom: update?.from,
         updateTo: update?.to,
         updateKind: update?.kind,
@@ -298,7 +305,8 @@ export async function checkUpdate(id) {
         result = { status: 'up-to-date' };
       } else {
         const current = await docker.getImage(inspect.Image).inspect().catch(() => ({ Id: inspect.Image }));
-        result = { status: 'update-available', ...versionChange(current, latest) };
+        // `published`: build date of the new image (used by the auto-update cooldown)
+        result = { status: 'update-available', ...versionChange(current, latest), published: latest.Created };
       }
     } catch (err) {
       result = { status: err.auth ? 'auth-required' : 'error', message: err.message };
@@ -394,6 +402,8 @@ export async function recreateContainer(id, buildOptions) {
     throw httpError(409, `A container named "${newName}" already exists`);
   }
 
+  suppressHealthAlerts(name);
+  suppressHealthAlerts(newName);
   if (wasRunning) await old.stop({ t: stopTimeout() });
   await old.rename({ name: `${name}_old` });
 

@@ -11,6 +11,9 @@ const EVENTS = {
   updated: { title: 'Containers updated', color: 0x22c55e, emoji: '✅', tag: 'white_check_mark', setting: 'updated' },
   'update-failed': { title: 'Update failed', color: 0xef4444, emoji: '❌', tag: 'x', setting: 'updateFailed' },
   cleanup: { title: 'Image cleanup', color: 0x0ea5e9, emoji: '🧹', tag: 'broom', setting: 'cleanup' },
+  unhealthy: { title: 'Container unhealthy', color: 0xef4444, emoji: '🩺', tag: 'warning', setting: 'health' },
+  recovered: { title: 'Container healthy again', color: 0x22c55e, emoji: '💚', tag: 'green_heart', setting: 'health' },
+  crashed: { title: 'Container crashed', color: 0xdc2626, emoji: '💥', tag: 'boom', setting: 'health' },
   test: { title: 'Test notification', color: 0x2496ed, emoji: '🐳', tag: 'whale', setting: null },
 };
 
@@ -29,7 +32,7 @@ const fmtBytes = (b) => {
 /** One line per item: "name: from -> to" / error. */
 function itemLine(item) {
   if (item.error) return `${item.name}: ${item.error}`;
-  if (item.from && item.to) return `${item.name}: ${item.from} → ${item.to}`;
+  if (item.from && item.to) return `${item.name}: ${item.from} → ${item.to}${item.note ? ` (${item.note})` : ''}`;
   return item.name;
 }
 
@@ -38,6 +41,9 @@ function summaryText(event, p) {
   if (event === 'test') return 'DockerUpdates notifications are working.';
   const n = p.items?.length ?? 0;
   if (event === 'update-available') return `${n} container${n === 1 ? ' has' : 's have'} a new image available.`;
+  if (event === 'unhealthy') return `${p.items?.[0]?.name} is failing its health check.`;
+  if (event === 'recovered') return `${p.items?.[0]?.name} is passing its health check again.`;
+  if (event === 'crashed') return `${p.items?.[0]?.name} stopped unexpectedly.`;
   if (event === 'updated') return `${n} container${n === 1 ? ' was' : 's were'} updated${p.trigger === 'auto' ? ' automatically' : ''}.`;
   return `${n} update${n === 1 ? '' : 's'} failed.`;
 }
@@ -71,6 +77,7 @@ async function sendDiscord(cfg, event, p) {
         : [
             item.image && `\`${item.image}\``,
             item.from && item.to && `**${item.from}** → **${item.to}**`,
+            item.note && `_${item.note}_`,
           ].filter(Boolean).join('\n') || '​',
       inline: !item.error && items.length > 1,
     })),
@@ -102,7 +109,7 @@ async function sendTelegram(cfg, event, p) {
     for (const item of items.slice(0, 40)) {
       lines.push(item.error
         ? `• <b>${escapeHtml(item.name)}</b>: <code>${escapeHtml(item.error.slice(0, 300))}</code>`
-        : `• <b>${escapeHtml(item.name)}</b>${item.from && item.to ? `  <code>${escapeHtml(item.from)}</code> → <code>${escapeHtml(item.to)}</code>` : ''}`);
+        : `• <b>${escapeHtml(item.name)}</b>${item.from && item.to ? `  <code>${escapeHtml(item.from)}</code> → <code>${escapeHtml(item.to)}</code>` : ''}${item.note ? ` <i>(${escapeHtml(item.note)})</i>` : ''}`);
     }
   }
   if (p.host) lines.push('', `<i>${escapeHtml(p.host)}</i>`);
@@ -152,6 +159,7 @@ export async function notify(event, payload = {}) {
   if (meta.setting && !n.events[meta.setting]) return;
   if (payload.trigger === 'manual' && !n.includeManual) return;
   if (meta.setting && event !== 'cleanup' && !payload.items?.length) return;
+  if (['unhealthy', 'recovered', 'crashed'].includes(event)) payload = { ...payload, trigger: 'auto' };
 
   await Promise.all(Object.entries(CHANNELS).map(async ([name, ch]) => {
     const cfg = n[name];

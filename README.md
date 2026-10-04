@@ -19,9 +19,10 @@
 ## Features
 
 - **Container overview**: state, image and tag, network, IP / MAC, container and LAN ports, volumes, uptime, autostart. Right-click a container for every action
-- **Live resources**: CPU and RAM refreshed every second, with the limits configured on each container
+- **Live resources**: CPU and RAM refreshed every second, with the limits configured on each container; host CPU and RAM always visible in the header
+- **Health alerts**: health check status on every container (healthy, unhealthy, starting) and notifications when a container becomes unhealthy, recovers, crashes or keeps restarting
 - **Update checks**: check one or all containers and see the exact change (`4bbda4e -> 9f3c2d1`); private registries supported (GHCR, Docker Hub, any registry) using your `docker login`
-- **Automatic updates**: global schedule (hourly, daily, weekly, monthly or cron) plus per-container schedules, "update" or "notify only", time zone aware
+- **Automatic updates**: global schedule (hourly, daily, weekly, monthly or cron) plus per-container schedules, "update" or "notify only", time zone aware, with an optional cooldown so only images published N days ago are installed
 - **Notifications**: Discord (rich embeds), Telegram, ntfy and generic webhooks (HMAC signed), with a test button
 - **Update history** per container, and **image cleanup** (after each update and/or on a schedule)
 - **Logs and console**: live logs with filter and download, and an interactive shell inside any running container

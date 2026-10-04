@@ -1,5 +1,7 @@
 import { CalendarClock, House, LogOut, Moon, Server, Settings, Sun } from 'lucide-react'
 import type { Page, Theme } from '../hooks'
+import type { HostUsage } from '../types'
+import HostMeters from './HostMeters'
 import Logo from './Logo'
 import { IconButton } from './ui'
 
@@ -9,6 +11,7 @@ interface Props {
   user: string
   page: Page
   theme: Theme
+  usage: HostUsage | null
   onNavigate: (page: Page) => void
   onToggleTheme: () => void
   onLogout: () => void
@@ -20,7 +23,7 @@ const NAV: { page: Page; label: string; icon: typeof House }[] = [
   { page: 'settings', label: 'Settings', icon: Settings },
 ]
 
-export default function Header({ hostIp, hostName, user, page, theme, onNavigate, onToggleTheme, onLogout }: Props) {
+export default function Header({ hostIp, hostName, user, page, theme, usage, onNavigate, onToggleTheme, onLogout }: Props) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-surface/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-3 px-4 sm:gap-6 sm:px-6">
@@ -61,6 +64,8 @@ export default function Header({ hostIp, hostName, user, page, theme, onNavigate
         </nav>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          <HostMeters usage={usage} />
+          <div className="mx-1 hidden h-6 w-px bg-line lg:block" />
           <IconButton
             label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={onToggleTheme}

@@ -51,6 +51,14 @@ export interface ContainerInfo {
   updateKind?: 'version' | 'revision' | 'image'
   /** Source / project page from the image labels */
   projectUrl?: string
+  /** Build date of the available update */
+  updatePublished?: string
+  /** Docker HEALTHCHECK status (null when the image has no health check) */
+  health: 'healthy' | 'unhealthy' | 'starting' | null
+  /** Output of the last health check */
+  healthLog?: string
+  exitCode?: number
+  restartCount: number
   /** This is DockerUpdates' own container */
   isSelf: boolean
   /** Memory limit set on the container (0 = no limit) */
@@ -158,6 +166,8 @@ export interface ContainerAutoUpdate {
   mode: 'global' | 'custom' | 'off'
   action?: AutoAction
   schedule?: Schedule
+  /** Overrides the global cooldown (custom mode) */
+  cooldownDays?: number
 }
 
 export interface Settings {
@@ -168,10 +178,11 @@ export interface Settings {
     schedule: Schedule
     applyToAll: boolean
     stopTimeout: number
+    cooldownDays: number
     containers: Record<string, ContainerAutoUpdate>
   }
   notifications: {
-    events: { updateAvailable: boolean; updated: boolean; updateFailed: boolean; cleanup: boolean }
+    events: { updateAvailable: boolean; updated: boolean; updateFailed: boolean; cleanup: boolean; health: boolean }
     includeManual: boolean
     discord: { enabled: boolean; webhookUrl: string; mention: string }
     telegram: { enabled: boolean; botToken: string; chatId: string }
@@ -193,6 +204,13 @@ export interface RunResult {
   available: number
   updated: number
   failed: number
+  deferred?: number
+}
+
+export interface HostUsage {
+  cpu: number
+  memUsed: number
+  memTotal: number
 }
 
 export interface AutoUpdateStatus {
@@ -212,6 +230,8 @@ export interface AutoUpdateStatus {
     local: boolean
     mode: 'global' | 'custom' | 'off'
     action: AutoAction | null
+    cooldownDays: number
+    health: ContainerInfo['health']
     nextRun: string | null
   }[]
 }

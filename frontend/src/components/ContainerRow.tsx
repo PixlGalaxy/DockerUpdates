@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowUpRight,
   ChevronDown,
   CircleCheck,
@@ -40,6 +41,53 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
 }
 
 const td = 'px-4 py-3.5 align-middle'
+
+const HEALTH = {
+  healthy: { label: 'Healthy', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+  unhealthy: { label: 'Unhealthy', cls: 'border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300' },
+  starting: { label: 'Starting', cls: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300' },
+}
+
+/** Health check status (only for images with a HEALTHCHECK) and crash hints. */
+function HealthTag({ container: c }: { container: ContainerInfo }) {
+  const tags = []
+  if (c.health && c.state === 'running') {
+    const h = HEALTH[c.health]
+    tags.push(
+      <span
+        key="health"
+        title={c.healthLog ? `Last health check:\n${c.healthLog}` : 'Docker health check'}
+        className={`inline-flex cursor-help items-center gap-1 rounded-md border px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase ${h.cls}`}
+      >
+        <Activity size={10} className={c.health === 'starting' ? 'animate-pulse' : ''} />
+        {h.label}
+      </span>,
+    )
+  }
+  if (c.state === 'exited' && c.exitCode) {
+    tags.push(
+      <span
+        key="exit"
+        title={c.exitCode === 137 ? 'Killed (SIGKILL), possibly out of memory' : 'The container exited with an error'}
+        className="inline-flex cursor-help items-center rounded-md border border-red-500/40 bg-red-500/10 px-1.5 py-px text-[10px] font-semibold tracking-wide text-red-700 uppercase dark:text-red-300"
+      >
+        Exit {c.exitCode}
+      </span>,
+    )
+  }
+  if (c.state === 'restarting' || c.restartCount > 3) {
+    tags.push(
+      <span
+        key="restarts"
+        title="Number of automatic restarts by Docker"
+        className="inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300"
+      >
+        {c.restartCount} restarts
+      </span>,
+    )
+  }
+  return tags.length ? <div className="mt-1 flex flex-wrap gap-1">{tags}</div> : null
+}
 const badge = 'inline-flex items-center gap-1.5 rounded-full whitespace-nowrap px-2 py-0.5 text-xs font-medium'
 
 export default function ContainerRow({
@@ -142,6 +190,7 @@ export default function ContainerRow({
               {c.id.slice(0, 12)}
               <Copy size={11} className="opacity-0 transition-opacity group-hover:opacity-100" />
             </button>
+            <HealthTag container={c} />
           </div>
         </div>
       </td>

@@ -22,6 +22,7 @@ const EVENT_LABELS: { key: keyof N['events']; label: string; description: string
   { key: 'updated', label: 'Container updated', description: 'A container was updated to a new image.' },
   { key: 'updateFailed', label: 'Update failed', description: 'An update or check failed (e.g. registry login required).' },
   { key: 'cleanup', label: 'Image cleanup', description: 'Old images were removed and disk space was freed.' },
+  { key: 'health', label: 'Health alerts', description: 'A container becomes unhealthy, recovers, crashes or keeps restarting.' },
 ]
 
 const inputCls = `${selectCls} font-mono text-xs`

@@ -20,11 +20,13 @@ export const DEFAULTS = {
     // true: every container follows the global schedule unless configured otherwise
     applyToAll: true,
     stopTimeout: 15,
+    // Only auto-update images published at least this many days ago (0 = no delay)
+    cooldownDays: 0,
     // name -> { mode: 'global' | 'custom' | 'off', action, schedule }
     containers: {},
   },
   notifications: {
-    events: { updateAvailable: true, updated: true, updateFailed: true, cleanup: false },
+    events: { updateAvailable: true, updated: true, updateFailed: true, cleanup: false, health: true },
     includeManual: true,
     discord: { enabled: false, webhookUrl: '', mention: '' },
     telegram: { enabled: false, botToken: '', chatId: '' },
@@ -117,7 +119,10 @@ function validate(s) {
   if (!Number.isInteger(Number(au.stopTimeout)) || au.stopTimeout < 0 || au.stopTimeout > 600) {
     throw bad('Stop timeout must be between 0 and 600 seconds');
   }
+  const days = (v) => Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 365;
+  if (!days(au.cooldownDays)) throw bad('Cooldown must be between 0 and 365 days');
   for (const [name, c] of Object.entries(au.containers ?? {})) {
+    if (c.cooldownDays != null && !days(c.cooldownDays)) throw bad(`${name}: cooldown must be between 0 and 365 days`);
     if (!['global', 'custom', 'off'].includes(c.mode)) throw bad(`${name}: invalid auto-update mode`);
     if (c.mode === 'custom') {
       if (!['update', 'notify'].includes(c.action)) throw bad(`${name}: invalid action`);
@@ -144,6 +149,7 @@ export async function updateSettings(patch) {
     if (get(next, keys) === MASK) set(next, keys, get(current, keys));
   }
   next.autoUpdate.stopTimeout = Number(next.autoUpdate.stopTimeout);
+  next.autoUpdate.cooldownDays = Number(next.autoUpdate.cooldownDays ?? 0);
   validate(next);
   settings = next;
   await writeJson(FILE, settings);
