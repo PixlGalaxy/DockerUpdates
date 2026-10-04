@@ -26,7 +26,7 @@ if (!USER || !PASSWORD) {
   process.exit(1);
 }
 if (PASSWORD.length < 8 || WEAK.has(PASSWORD.toLowerCase()) || PASSWORD === USER) {
-  console.error('ADMIN_PASSWORD is too weak: use at least 12 characters and not a default value.');
+  console.error('ADMIN_PASSWORD is too weak: use at least 8 characters (12+ recommended) and not a default value.');
   process.exit(1);
 }
 if (PASSWORD.length < 12) {
@@ -49,7 +49,11 @@ const sign = (data) => crypto.createHmac('sha256', SECRET).update(data).digest('
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function audit(req, message) {
-  console.log(`[audit] ${new Date().toISOString()} ip=${req.ip ?? req.socket?.remoteAddress} ${message}`);
+  const ip = req.ip ?? req.socket?.remoteAddress;
+  const peer = req.socket?.remoteAddress;
+  // When the IP comes from X-Forwarded-For, also log who actually connected
+  const via = peer && ip !== peer ? ` via=${peer}` : '';
+  console.log(`[audit] ${new Date().toISOString()} ip=${ip}${via} ${message}`);
 }
 
 function readCookie(req, name) {
@@ -152,26 +156,48 @@ setInterval(() => {
 // ---------- Brute-force protection ----------
 
 const ipFailures = new Map(); // ip -> { times: number[], lockedUntil }
+
+// Without TRUST_PROXY, every private-network host is trusted to send X-Forwarded-For, so a
+// LAN client could rotate fake client IPs to dodge the per-IP lockout. In that case the
+// lockout also counts the address that actually opened the connection.
+const PROXY_PINNED = Boolean(process.env.TRUST_PROXY?.trim());
+if (!PROXY_PINNED) {
+  console.warn('TRUST_PROXY not set: any private-network host may send X-Forwarded-For. Set it to your reverse proxy IP.');
+}
+
+/** Addresses the login lockout applies to for this request. */
+function lockoutKeys(req) {
+  const keys = [req.ip];
+  const peer = req.socket?.remoteAddress;
+  if (!PROXY_PINNED && peer && peer !== req.ip) keys.push(`peer:${peer}`);
+  return keys;
+}
 let globalFailures = [];
 let globalLockedUntil = 0;
 
-function lockedFor(ip) {
+function lockedFor(req) {
   const now = Date.now();
   if (globalLockedUntil > now) return globalLockedUntil - now;
-  const entry = ipFailures.get(ip);
-  return entry?.lockedUntil > now ? entry.lockedUntil - now : 0;
+  let wait = 0;
+  for (const key of lockoutKeys(req)) {
+    const entry = ipFailures.get(key);
+    if (entry?.lockedUntil > now) wait = Math.max(wait, entry.lockedUntil - now);
+  }
+  return wait;
 }
 
 function registerFailure(req) {
   const now = Date.now();
-  const entry = ipFailures.get(req.ip) ?? { times: [], lockedUntil: 0 };
-  entry.times = entry.times.filter((t) => now - t < IP_WINDOW_MS).concat(now);
-  if (entry.times.length >= IP_MAX_FAILURES) {
-    entry.lockedUntil = now + IP_WINDOW_MS;
-    entry.times = [];
-    audit(req, `login locked for this IP after ${IP_MAX_FAILURES} failed attempts`);
+  for (const key of lockoutKeys(req)) {
+    const entry = ipFailures.get(key) ?? { times: [], lockedUntil: 0 };
+    entry.times = entry.times.filter((t) => now - t < IP_WINDOW_MS).concat(now);
+    if (entry.times.length >= IP_MAX_FAILURES) {
+      entry.lockedUntil = now + IP_WINDOW_MS;
+      entry.times = [];
+      audit(req, `login locked for ${key} after ${IP_MAX_FAILURES} failed attempts`);
+    }
+    ipFailures.set(key, entry);
   }
-  ipFailures.set(req.ip, entry);
 
   globalFailures = globalFailures.filter((t) => now - t < GLOBAL_WINDOW_MS).concat(now);
   if (globalFailures.length >= GLOBAL_MAX_FAILURES) {
@@ -191,7 +217,7 @@ setInterval(() => {
 // ---------- Handlers ----------
 
 export async function login(req, res) {
-  const wait = lockedFor(req.ip);
+  const wait = lockedFor(req);
   if (wait) {
     res.set('Retry-After', String(Math.ceil(wait / 1000)));
     return res.status(429).json({ error: `Too many failed attempts, try again in ${Math.ceil(wait / 60_000)} min` });
@@ -209,7 +235,7 @@ export async function login(req, res) {
     await sleep(FAILURE_DELAY_MS);
     return res.status(400).json({ error: 'Invalid username or password' });
   }
-  ipFailures.delete(req.ip);
+  for (const key of lockoutKeys(req)) ipFailures.delete(key);
   res.cookie(COOKIE, createSession(USER), {
     ...cookieOptions(req),
     maxAge: SESSION_HOURS * 3600_000,

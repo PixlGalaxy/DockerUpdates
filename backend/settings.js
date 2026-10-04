@@ -63,10 +63,14 @@ const SECRETS = [
 
 let settings = null;
 
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function merge(base, value) {
   if (Array.isArray(base) || typeof base !== 'object' || base === null) return value ?? base;
   const out = { ...base };
   for (const [k, v] of Object.entries(value ?? {})) {
+    // JSON.parse keeps "__proto__" as an own key: never let it reach an assignment
+    if (FORBIDDEN_KEYS.has(k)) continue;
     out[k] = k in base && typeof base[k] === 'object' && base[k] !== null && !Array.isArray(base[k]) && k !== 'containers'
       ? merge(base[k], v)
       : v;

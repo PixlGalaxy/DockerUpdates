@@ -129,15 +129,15 @@ app.post('/api/containers/:id/update', handle(async (req) => {
     throw err;
   }
 }));
-app.post('/api/containers/:id/:action', handle(async (req) => {
-  await dk.doAction(req.params.id, req.params.action);
-  return ok;
-}));
 app.post('/api/containers/:id/refresh-icon', handle(async (req) => {
   const image = (await dk.docker.getContainer(req.params.id).inspect()).Config.Image;
   const reset = await resetAutoIcon(image);
   if (reset) await dk.listContainers(); // starts a new search in the background
   return { reset };
+}));
+app.post('/api/containers/:id/:action', handle(async (req) => {
+  await dk.doAction(req.params.id, req.params.action);
+  return ok;
 }));
 app.get('/api/containers/:id/spec', handle((req) => dk.getContainerSpec(req.params.id)));
 app.get('/api/containers/:id/logs/stream', streamLogs);

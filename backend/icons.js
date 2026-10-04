@@ -264,7 +264,8 @@ export async function discoverIcons(containers) {
       try {
         let found = null;
         let source = 'favicon';
-        if (unraidIcon) {
+        // The label comes from the image: only follow plain web URLs
+        if (unraidIcon && /^https?:\/\//i.test(unraidIcon)) {
           found = await downloadImage(unraidIcon).catch(() => null);
           source = 'label';
         }

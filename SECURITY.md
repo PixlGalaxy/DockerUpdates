@@ -44,16 +44,24 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 
 | Area | Protection |
 | --- | --- |
-| Login | Per-IP lockout (5 failures / 15 min), global lockout (30 failures / 15 min), 1 s delay on failures, constant-time comparison |
+| Login | Per-IP lockout (5 failures / 15 min), global lockout (30 failures / 15 min), 1 s delay on failures, constant-time comparison. Without `TRUST_PROXY`, the lockout also counts the address that opened the connection, so fake `X-Forwarded-For` values cannot dodge it |
 | Passwords | App refuses to start with a default or < 8 character password |
 | Cookies | `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS (or forced with `COOKIE_SECURE=true`), HMAC-signed |
 | CSRF / CORS | Same-origin only API: no CORS headers, preflights rejected, cross-site fetches rejected, `Origin` must match the app for every state-changing request (also blocks sibling subdomains behind the same proxy) |
 | Headers | Strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY`, HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control: no-store` on the API |
-| Proxy | Only proxies listed in `TRUST_PROXY` may set `X-Forwarded-For` / `X-Forwarded-Proto` |
-| Input | Container IDs validated (no Docker API path traversal), 100 KB request body limit, Extra parameters parsed against an allow-list of `docker run` flags |
-| Icons | Size-limited (1 MB), type-checked downloads, served with a sandboxing CSP |
+| Proxy | Only proxies listed in `TRUST_PROXY` may set `X-Forwarded-For` / `X-Forwarded-Proto`. When it is not set, private networks are trusted, a warning is printed at startup, and audit lines show the real peer (`via=`) next to the forwarded IP |
+| Input | Container IDs validated (no Docker API path traversal), 100 KB request body limit, Extra parameters parsed against an allow-list of `docker run` flags, `__proto__` / `constructor` / `prototype` keys ignored in settings |
+| Icons | Size-limited (1 MB), type-checked downloads, served with a sandboxing CSP. Icon URLs from image labels are only followed when they are `http(s)` |
 | Registry credentials | Read-only mount of `~/.docker/config.json`, or `REGISTRY_AUTH`; never sent to the browser |
 | Auditing | Logins, lockouts, blocked origins and every state-changing API call are logged (`docker logs dockerupdates`) |
+
+## Fixed issues
+
+| Date | Severity | Issue | Fix |
+| --- | --- | --- | --- |
+| 2026-10-04 | Medium | With `TRUST_PROXY` unset (the default), every host on a private network was trusted to send `X-Forwarded-For`. A LAN client could send a different fake IP on each attempt and bypass the per-IP login lockout (only the global limit of 30 attempts / 15 min applied). It could also forge the IP written to the audit log. | The lockout also tracks the real connecting address when `TRUST_PROXY` is not set, audit lines include it as `via=`, and a startup warning asks for `TRUST_PROXY`. Behind a reverse proxy without `TRUST_PROXY`, failed logins through the proxy now share one lockout: set `TRUST_PROXY` to avoid that. |
+| 2026-10-04 | Low | `PUT /api/settings` merged `__proto__` keys from the request body, which let an authenticated request change the prototype of the in-memory settings objects (no global pollution, lost on restart). | Dangerous keys are skipped during the merge. |
+| 2026-10-04 | Low | The `net.unraid.docker.icon` label of any pulled image was fetched without checking its scheme. | Only `http://` and `https://` label URLs are fetched. |
 
 ## Hardening checklist
 
