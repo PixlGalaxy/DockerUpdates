@@ -25,7 +25,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) throw new UnauthorizedError()
   if (!res.ok) {
     const body = await res.json().catch(() => null)
-    throw new Error(body?.error ?? `Request failed (${res.status})`)
+    if (body?.error) throw new Error(body.error)
+    // No JSON body: the backend did not answer (stopped, crashed, or a proxy error page)
+    throw new Error(
+      res.status >= 500
+        ? 'Cannot reach the DockerUpdates server. Check that the backend is running (see its logs).'
+        : `Request failed (${res.status})`,
+    )
   }
   return res.json() as Promise<T>
 }
