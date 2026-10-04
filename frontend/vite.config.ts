@@ -6,7 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': {
+        target: 'http://localhost:3000',
+        // Keep the browser's Host header (localhost:5173) so it matches the Origin:
+        // the backend rejects requests whose Origin is not its own host (CSRF protection).
+        changeOrigin: false,
+      },
     },
   },
 })
