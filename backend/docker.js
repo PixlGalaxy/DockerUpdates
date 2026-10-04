@@ -192,6 +192,7 @@ export async function listContainers() {
           image: inspect.Config.Image,
           labels: inspect.Config.Labels,
           running: info.State === 'running',
+          startedAt: inspect.State.StartedAt,
           targets: httpTargets(inspect, ports),
         },
       };
@@ -215,21 +216,43 @@ function httpTargets(inspect, ports) {
   const urls = [];
   const nets = Object.values(inspect.NetworkSettings.Networks ?? {});
   const hostMode = inspect.HostConfig.NetworkMode === 'host';
+  // Addresses that reach ports published on the server: its LAN IP and, from inside
+  // DockerUpdates' own container, the Docker gateway (always routed to the host)
+  const hostAddrs = [hostIp(), ownGateway].filter(Boolean);
+
+  // Unraid WebUI label first, e.g. "http://[IP]:[PORT:81]/"
+  const webuiPort = inspect.Config.Labels?.['net.unraid.docker.webui']?.match(/\[PORT:(\d+)\]/)?.[1];
+  if (webuiPort) {
+    const published = [...ports.values()].find((p) => String(p.containerPort) === webuiPort)?.hostPort;
+    if (hostMode || published) for (const a of hostAddrs) urls.push(`http://${a}:${published ?? webuiPort}`);
+    for (const n of nets) if (n.IPAddress) urls.push(`http://${n.IPAddress}:${webuiPort}`);
+  }
+
   for (const p of ports.values()) {
     if (p.protocol !== 'tcp') continue;
     for (const n of nets) if (n.IPAddress) urls.push(`http://${n.IPAddress}:${p.containerPort}`);
     if (p.hostPort) {
-      urls.push(`http://${hostIp()}:${p.hostPort}`);
+      for (const a of hostAddrs) urls.push(`http://${a}:${p.hostPort}`);
       for (const n of nets) if (n.Gateway) urls.push(`http://${n.Gateway}:${p.hostPort}`);
     }
   }
   if (hostMode) {
+    // Host network: no port mappings, use the ports the image declares (EXPOSE)
     for (const port of Object.keys(inspect.Config.ExposedPorts ?? {})) {
       const [num, proto] = port.split('/');
-      if (proto === 'tcp') urls.push(`http://${hostIp()}:${num}`);
+      if (proto === 'tcp') for (const a of hostAddrs) urls.push(`http://${a}:${num}`);
     }
   }
-  return [...new Set(urls)].slice(0, 6);
+  return [...new Set(urls)].slice(0, 12);
+}
+
+// Default gateway of the network DockerUpdates runs in (Linux), e.g. 172.17.0.1
+let ownGateway = null;
+if (process.platform === 'linux') {
+  fs.readFile('/proc/net/route', 'utf8').then((routes) => {
+    const hex = routes.split('\n').map((l) => l.trim().split(/\s+/)).find((c) => c[1] === '00000000')?.[2];
+    if (hex) ownGateway = [3, 2, 1, 0].map((i) => parseInt(hex.slice(i * 2, i * 2 + 2), 16)).join('.');
+  }, () => {});
 }
 
 // ---------- Actions ----------

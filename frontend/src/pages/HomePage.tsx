@@ -5,6 +5,7 @@ import {
   FileDown,
   Globe,
   History,
+  ImageIcon,
   Pause,
   Pencil,
   Play,
@@ -245,6 +246,14 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => withBusy(c.id, () => api.update(c.id), reportUpdate) },
       { label: 'Update history', icon: <History size={15} />, onSelect: () => setPanel({ kind: 'history', container: c }) },
       { label: 'Export template', icon: <FileDown size={15} />, onSelect: () => void exportTemplate(c) },
+      {
+        label: 'Refresh icon',
+        icon: <ImageIcon size={15} />,
+        onSelect: () =>
+          withBusy(c.id, () => api.refreshIcon(c.id), (r) =>
+            toast('info', r.reset ? `Looking for ${c.name}'s icon again…` : `${c.name} uses a custom icon (change it in Edit)`),
+          ),
+      },
       { label: 'Project page', icon: <ExternalLink size={15} />, hidden: !c.projectUrl, separatorBefore: true, onSelect: () => window.open(c.projectUrl, '_blank', 'noreferrer') },
       { label: 'Copy ID', icon: <Copy size={15} />, separatorBefore: !c.projectUrl, onSelect: () => void copy(c.id) },
       {

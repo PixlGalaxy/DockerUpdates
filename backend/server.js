@@ -15,7 +15,7 @@ import { notify, testChannel } from './notify.js';
 import * as scheduler from './scheduler.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
-import { iconFile, initIcons } from './icons.js';
+import { iconFile, initIcons, resetAutoIcon } from './icons.js';
 import {
   auditLog,
   isSameOrigin,
@@ -131,6 +131,12 @@ app.post('/api/containers/:id/update', handle(async (req) => {
 app.post('/api/containers/:id/:action', handle(async (req) => {
   await dk.doAction(req.params.id, req.params.action);
   return ok;
+}));
+app.post('/api/containers/:id/refresh-icon', handle(async (req) => {
+  const image = (await dk.docker.getContainer(req.params.id).inspect()).Config.Image;
+  const reset = await resetAutoIcon(image);
+  if (reset) await dk.listContainers(); // starts a new search in the background
+  return { reset };
 }));
 app.get('/api/containers/:id/spec', handle((req) => dk.getContainerSpec(req.params.id)));
 app.get('/api/containers/:id/logs/stream', streamLogs);

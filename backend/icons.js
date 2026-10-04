@@ -200,25 +200,46 @@ function iconLinksFromHtml(html, baseUrl) {
   return links.sort((a, b) => b.score - a.score).map((l) => l.url);
 }
 
+/**
+ * Looks at every reachable port and prefers icons declared in a page's HTML (the real web UI,
+ * e.g. NPM's admin on :81) over a bare /favicon.ico (e.g. a default landing page on :80).
+ */
 async function findFavicon(baseUrls) {
+  const declared = [];
+  const fallbacks = [];
+  const reached = new Set();
   for (const base of baseUrls) {
-    let candidates = [];
     try {
       const page = await fetchLimited(base, { accept: 'text/html' });
-      if (/html/i.test(page.type ?? '')) candidates = iconLinksFromHtml(page.buf.toString(), page.url);
+      // Same service reached through two addresses (LAN IP / gateway): look at it once
+      const key = new URL(page.url).port || new URL(base).port;
+      if (reached.has(key)) continue;
+      reached.add(key);
+      if (/html/i.test(page.type ?? '')) declared.push(...iconLinksFromHtml(page.buf.toString(), page.url));
+      fallbacks.push(new URL('/favicon.ico', page.url).href);
     } catch {
-      continue; // port is not HTTP / not reachable from here
+      // port is not HTTP / not reachable from here
     }
-    candidates.push(new URL('/favicon.ico', base).href);
-    for (const url of candidates) {
-      try {
-        return await downloadImage(url);
-      } catch {
-        // try next candidate
-      }
+  }
+  for (const url of [...declared, ...fallbacks]) {
+    try {
+      return await downloadImage(url);
+    } catch {
+      // try next candidate
     }
   }
   return null;
+}
+
+/** Forgets the automatic icon of an image so it is searched again (custom icons are kept). */
+export async function resetAutoIcon(image) {
+  await load();
+  const repo = repoOf(image);
+  if (db[repo]?.source === 'custom') return false;
+  await removeFile(repo);
+  delete db[repo];
+  await save();
+  return true;
 }
 
 /**
@@ -231,7 +252,10 @@ export async function discoverIcons(containers) {
     const repo = repoOf(c.image);
     const entry = db[repo];
     if (entry?.file || discovering.has(repo)) continue;
-    if (entry?.failedAt && Date.now() - entry.failedAt < FAVICON_RETRY_MS) continue;
+    // A failed search is retried after 6 h, or right away if the container restarted since
+    // (e.g. it was crashing when we looked)
+    const restartedSince = c.startedAt && Date.parse(c.startedAt) > (entry?.failedAt ?? 0);
+    if (entry?.failedAt && Date.now() - entry.failedAt < FAVICON_RETRY_MS && !restartedSince) continue;
     const unraidIcon = c.labels?.[UNRAID_LABEL];
     if (!unraidIcon && (!c.running || c.targets.length === 0)) continue;
 

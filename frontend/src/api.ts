@@ -80,6 +80,7 @@ export const api = {
   bulk: (action: ContainerAction) => post<BulkSummary>(`/api/containers/bulk/${action}`),
   create: (spec: ContainerSpec) => post<{ id: string }>('/api/containers', spec),
   spec: (id: string) => request<ContainerSpec>(`/api/containers/${id}/spec`),
+  refreshIcon: (id: string) => post<{ reset: boolean }>(`/api/containers/${id}/refresh-icon`),
   edit: (id: string, spec: ContainerSpec) =>
     request<{ name: string }>(`/api/containers/${id}`, { method: 'PUT', body: JSON.stringify(spec) }),
   networks: () => request<NetworkInfo[]>('/api/networks'),
