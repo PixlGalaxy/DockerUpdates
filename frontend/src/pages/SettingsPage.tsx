@@ -4,6 +4,7 @@ import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
 import LanNetworkCard from '../components/LanNetworkCard'
 import SecurityCard from '../components/SecurityCard'
+import ServerSettings from '../components/ServerSettings'
 import SupportCard from '../components/SupportCard'
 import ScheduleEditor from '../components/ScheduleEditor'
 import { selectCls } from '../schedule'
@@ -15,6 +16,8 @@ import { formatBytes, timeAgo } from '../utils'
 interface Props {
   toast: (tone: ToastTone, message: string) => void
   onError: (err: unknown) => void
+  /** Username changed in Settings → Account (shown in the header) */
+  onUserChange?: (user: string) => void
 }
 
 type Channel = 'discord' | 'telegram' | 'ntfy' | 'webhook'
@@ -52,7 +55,7 @@ function timeUntil(iso: string): string {
   return minutes % 60 ? `${h} h ${minutes % 60} min` : `${h} h`
 }
 
-export default function SettingsPage({ toast, onError }: Props) {
+export default function SettingsPage({ toast, onError, onUserChange }: Props) {
   const [saved, setSaved] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
   const [timezones, setTimezones] = useState<string[]>([])
@@ -383,6 +386,8 @@ export default function SettingsPage({ toast, onError }: Props) {
           )}
         </div>
       </Card>
+
+      <ServerSettings toast={toast} onError={onError} onUserChange={onUserChange} />
 
       <SecurityCard toast={toast} onError={onError} />
 

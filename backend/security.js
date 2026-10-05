@@ -1,27 +1,13 @@
 // HTTP hardening: security headers, strict same-origin policy (no CORS), input checks.
 import helmet from 'helmet';
 import { audit } from './auth.js';
+import { allowedOrigins } from './runtimeConfig.js';
 
-/** Extra origins allowed to call the API, e.g. "https://docker.example.com" (normally not needed). */
-const ALLOWED_ORIGINS = new Set(
-  (process.env.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((o) => o.trim().replace(/\/$/, ''))
-    .filter(Boolean),
-);
+// Proxies whose X-Forwarded-* headers are trusted (TRUST_PROXY, editable in Settings) and the
+// extra allowed origins (ALLOWED_ORIGINS) are read from runtimeConfig.js on every request.
+export { trustProxySetting } from './runtimeConfig.js';
 
-/**
- * Proxies whose X-Forwarded-* headers are trusted (for the client IP and HTTPS detection).
- * Set TRUST_PROXY to the Nginx Proxy Manager IP so other LAN hosts cannot spoof them.
- */
-export function trustProxySetting() {
-  const v = process.env.TRUST_PROXY?.trim();
-  if (!v) return 'loopback, linklocal, uniquelocal';
-  if (v === 'false') return false;
-  if (v === 'true') return true;
-  if (/^\d+$/.test(v)) return Number(v);
-  return v;
-}
+const isAllowedOrigin = (origin) => allowedOrigins().includes(origin);
 
 export const securityHeaders = helmet({
   contentSecurityPolicy: {
@@ -89,7 +75,7 @@ export function sameOriginOnly(req, res, next) {
   }
   // Host is set by the client/proxy (NPM forwards it as-is); X-Forwarded-Host is ignored
   // because any client could send it.
-  if (host !== req.get('host') && !ALLOWED_ORIGINS.has(origin)) {
+  if (host !== req.get('host') && !isAllowedOrigin(origin)) {
     audit(req, `blocked ${req.method} ${req.path} from origin ${origin}`);
     return res.status(403).json({ error: 'Origin not allowed' });
   }
@@ -101,7 +87,7 @@ export function isSameOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return false;
   try {
-    return new URL(origin).host === req.headers.host || ALLOWED_ORIGINS.has(origin);
+    return new URL(origin).host === req.headers.host || isAllowedOrigin(origin);
   } catch {
     return false;
   }
