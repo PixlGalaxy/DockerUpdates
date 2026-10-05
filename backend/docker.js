@@ -390,6 +390,16 @@ async function pull(image, log = silent) {
   }
 }
 
+// Delay before checking a container that was just created / edited, so it shows its
+// update status instead of "Not checked" until the next background check.
+const CHECK_AFTER_START_MS = 3000;
+
+function checkUpdateSoon(ref) {
+  setTimeout(() => {
+    checkUpdate(ref).catch((err) => console.warn(`Update check after start failed for ${ref}: ${err.message}`));
+  }, CHECK_AFTER_START_MS).unref();
+}
+
 /** Pulls the image and compares its ID with the one the container uses. */
 export async function checkUpdate(id) {
   const inspect = await docker.getContainer(id).inspect();
@@ -819,6 +829,7 @@ export async function editContainer(id, spec) {
   updateStatus.delete(oldName);
   if (name !== oldName) await renameInHistory(oldName, name);
   await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
+  checkUpdateSoon(name);
   return { name };
 }
 
@@ -833,5 +844,6 @@ export async function createContainer(spec) {
   await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
   const container = await docker.createContainer(options);
   await container.start();
+  checkUpdateSoon(container.id);
   return container.id;
 }

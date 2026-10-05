@@ -293,6 +293,10 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [containers, filter, search])
 
+  // The server checks a created / edited container for updates 3 s after it starts:
+  // refresh once more so its status replaces "Not checked" without waiting for the poll
+  const refreshAfterCheck = () => setTimeout(() => void refresh(), 5000)
+
   const handleSubmitError = (err: unknown) => {
     if (err instanceof UnauthorizedError) onSignedOut()
     throw err
@@ -376,6 +380,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
             await api.create(spec).catch(handleSubmitError)
             toast('success', `${spec.name} created (saved as template)`)
             await refresh()
+            refreshAfterCheck()
           }}
         />
       )}
@@ -399,6 +404,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
                 return next
               })
               await refresh()
+              refreshAfterCheck()
             }
           }}
         />
