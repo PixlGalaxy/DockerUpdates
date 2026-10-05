@@ -33,13 +33,15 @@ export default function SecurityCard({ toast, onError }: { toast: (tone: ToastTo
   const dirty = FIELDS.some(({ key }) => draft[key] !== info.values[key])
   const st = info.status
   const checks: { ok: boolean; text: string }[] = [
-    { ok: Boolean(st.trustProxy), text: st.trustProxy ? `TRUST_PROXY is set (${st.trustProxy})` : 'TRUST_PROXY is not set: every private-network host may send X-Forwarded-For' },
+    { ok: Boolean(st.trustProxy), text: st.trustProxy ? `A reverse proxy is trusted (${st.trustProxy})` : 'No reverse proxy is pinned: every private-network host may send X-Forwarded-For' },
     {
       ok: st.cookieSecureForced || st.connectionSecure,
-      text: st.cookieSecureForced ? 'COOKIE_SECURE=true: the session cookie is HTTPS-only' : st.connectionSecure ? 'This connection uses HTTPS' : 'Plain HTTP: set COOKIE_SECURE=true once you only use HTTPS',
+      text: st.cookieSecureForced ? 'The session cookie is HTTPS-only' : st.connectionSecure ? 'This connection uses HTTPS' : 'Plain HTTP: turn on the HTTPS-only cookie once you only use HTTPS',
     },
-    { ok: st.sessionSecretSet, text: st.sessionSecretSet ? 'SESSION_SECRET is set' : 'SESSION_SECRET is not set: sessions reset on every restart' },
-    { ok: st.passwordLength >= 16, text: st.passwordLength >= 16 ? 'ADMIN_PASSWORD has 16+ characters' : `ADMIN_PASSWORD has ${st.passwordLength} characters (16+ recommended)` },
+    { ok: st.sessionSecretSet, text: st.sessionSecretSet ? 'A session secret is set' : 'No session secret: sessions reset on every restart' },
+    st.passwordLength === null
+      ? { ok: true, text: 'The password was set in Settings → Account' }
+      : { ok: st.passwordLength >= 16, text: st.passwordLength >= 16 ? 'The password has 16+ characters' : `The password has ${st.passwordLength} characters (16+ recommended)` },
   ]
 
   async function save() {
@@ -94,7 +96,7 @@ export default function SecurityCard({ toast, onError }: { toast: (tone: ToastTo
       })}
 
       <div className="rounded-xl border border-line bg-surface-2/40 p-4">
-        <p className="mb-2 text-xs font-medium text-muted">Set in the .env file (read-only here)</p>
+        <p className="mb-2 text-xs font-medium text-muted">Security checklist (change these in Account and Server &amp; access above)</p>
         <ul className="space-y-1.5 text-sm">
           {checks.map((c) => (
             <li key={c.text} className="flex items-start gap-2">

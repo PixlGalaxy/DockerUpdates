@@ -45,10 +45,10 @@ export default function App() {
       </div>
     )
   }
-  return <Dashboard user={user} onSignedOut={() => setUser(null)} />
+  return <Dashboard user={user} onUserChange={setUser} onSignedOut={() => setUser(null)} />
 }
 
-function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => void }) {
+function Dashboard({ user, onUserChange, onSignedOut }: { user: string; onUserChange: (user: string) => void; onSignedOut: () => void }) {
   const [theme, setTheme] = useTheme()
   const [page, navigate] = usePage()
   const [host, setHost] = useState<HostInfo | null>(null)
@@ -166,7 +166,7 @@ function Dashboard({ user, onSignedOut }: { user: string; onSignedOut: () => voi
         )}
         <Suspense fallback={pageFallback}>
           {page === 'auto-update' && <AutoUpdatePage toast={toast} onError={handleError} />}
-          {page === 'settings' && <SettingsPage toast={toast} onError={handleError} />}
+          {page === 'settings' && <SettingsPage toast={toast} onError={handleError} onUserChange={onUserChange} />}
           {page === 'admin' && <AdminPage toast={toast} onError={handleError} />}
         </Suspense>
       </main>

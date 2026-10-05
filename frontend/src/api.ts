@@ -31,6 +31,8 @@ import type {
   LogPage,
   SecurityInfo,
   SecurityValues,
+  ServerConfig,
+  ServerConfigPatch,
   SystemInfo,
 } from './adminTypes'
 
@@ -150,4 +152,11 @@ export const adminApi = {
     request<SecurityInfo>('/api/admin/security', { method: 'PUT', body: JSON.stringify(values) }),
 
   system: () => request<SystemInfo>('/api/admin/system'),
+
+  config: () => request<ServerConfig>('/api/config'),
+  saveConfig: (patch: ServerConfigPatch) => request<ServerConfig>('/api/config', { method: 'PUT', body: JSON.stringify(patch) }),
+  changeUsername: (username: string, currentPassword: string) =>
+    post<{ user: string; config: ServerConfig }>('/api/config/username', { username, currentPassword }),
+  changePassword: (newPassword: string, currentPassword: string) =>
+    post<ServerConfig>('/api/config/password', { newPassword, currentPassword }),
 }

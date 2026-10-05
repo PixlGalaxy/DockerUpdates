@@ -10,6 +10,7 @@ import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons
 import { authFor, authHint, isAuthError } from './registryAuth.js';
 import { silent } from './operations.js';
 import { dockerRunCommand, humanSize } from './runCommand.js';
+import { hostIpOverride, hostIpSource, hostNameOverride } from './runtimeConfig.js';
 import { getSettings } from './settings.js';
 import { cachedStats, getStats, initStats, parseSample } from './stats.js';
 import { saveTemplate } from './templates.js';
@@ -89,10 +90,17 @@ export function setDetectedHost(value) {
   detectedHost = value;
 }
 
-/** HOST_IP when it is an address of this server, else the detected LAN IP. */
+/** Detected LAN IP and every IPv4 address of the server (null until detected / not needed). */
+export const detectedHostInfo = () => detectedHost;
+
+/**
+ * Host IP: one chosen in Settings is always used (the UI warns when it is not an address of
+ * the server); HOST_IP from .env only when it is one, since it is often stale. Else detected.
+ */
 export function hostIp() {
-  const configured = process.env.HOST_IP?.trim();
-  if (configured && (!detectedHost || detectedHost.addresses.includes(configured))) return configured;
+  const configured = hostIpOverride();
+  const fromSettings = hostIpSource() === 'settings';
+  if (configured && (fromSettings || !detectedHost || detectedHost.addresses.includes(configured))) return configured;
   if (detectedHost) return detectedHost.ip;
   if (configured) return configured;
   for (const list of Object.values(os.networkInterfaces())) {
@@ -107,7 +115,11 @@ export function hostIp() {
 let hostNameCache = { value: null, at: 0 };
 
 export async function hostName() {
-  if (process.env.HOST_NAME) return process.env.HOST_NAME;
+  return hostNameOverride() || autoHostName();
+}
+
+/** Hostname reported by the Docker daemon (cached 10 min). */
+export async function autoHostName() {
   if (hostNameCache.value && Date.now() - hostNameCache.at < 10 * 60_000) return hostNameCache.value;
   try {
     hostNameCache = { value: (await docker.info()).Name, at: Date.now() };
@@ -121,7 +133,7 @@ export async function hostName() {
 export async function hostInfo() {
   const info = await docker.info();
   return {
-    name: process.env.HOST_NAME || info.Name,
+    name: hostNameOverride() || info.Name,
     ip: hostIp(),
     memTotal: info.MemTotal,
     cpus: info.NCPU,

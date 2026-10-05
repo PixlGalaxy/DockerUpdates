@@ -126,12 +126,13 @@ The `data` volume keeps settings, notification channels, update history, templat
 
 ## Configuration
 
-All settings are environment variables (see [`backend/.env.example`](backend/.env.example)).
+All settings are environment variables (see [`backend/.env.example`](backend/.env.example)). Most of them can also be changed later in the web UI, in **Settings > Account** (username and password), **Settings > Server & access** and **Settings > Registry credentials**. A value saved in the UI takes precedence over `.env`.
 
 | Variable | Required | Default | Description |
 | --- | :---: | --- | --- |
 | `ADMIN_USER` | Yes | | Login username |
 | `ADMIN_PASSWORD` | Yes | | Login password. Default or < 8 character passwords are rejected; use 12+ |
+| `RESET_LOGIN_CONFIG` | | `false` | `true` deletes the username / password set in Settings > Account at startup, so `ADMIN_USER` / `ADMIN_PASSWORD` work again (forgotten login). Set it back to `false` afterwards |
 | `SESSION_SECRET` | | random | Signs session cookies, 32+ characters (`openssl rand -hex 32`) |
 | `SESSION_HOURS` | | `12` | Maximum session lifetime (initial value, then editable in Settings > Login & sessions) |
 | `SESSION_IDLE_MINUTES` | | `120` | Sign out after this much inactivity (initial value, then editable in Settings) |
@@ -144,7 +145,7 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `ALLOWED_ORIGINS` | | | Extra origins allowed to call the API (normally not needed) |
 | `DOCKER_HOST` / `DOCKER_SOCKET` | | platform socket | Custom Docker connection |
 
-Changes to `.env` apply when the container is **recreated** (`docker rm -f` + `docker run`), not on `docker restart`.
+Changes to `.env` apply when the container is **recreated** (`docker rm -f` + `docker run`, or `docker compose up -d`), not on `docker restart`: Docker copies the variables into the container when it is created. Settings changed in the web UI apply right away. `PORT` and the Docker connection can only be changed in `.env`.
 
 ## Private registries
 

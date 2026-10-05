@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { registryAuth } from './runtimeConfig.js';
 
 const DOCKER_HUB = 'docker.io';
 const HUB_ALIASES = new Set(['docker.io', 'index.docker.io', 'registry-1.docker.io', 'registry.hub.docker.com']);
@@ -20,21 +21,10 @@ function normalizeRegistry(key) {
   return HUB_ALIASES.has(host) ? DOCKER_HUB : host;
 }
 
-/**
- * REGISTRY_AUTH="ghcr.io=user:token,docker.io=user:pass"
- * The password may contain ":" (only the first one separates user and password).
- */
+/** Credentials from Settings → Registry credentials (or REGISTRY_AUTH in .env). */
 function fromEnv(registry) {
-  for (const entry of (process.env.REGISTRY_AUTH ?? '').split(',')) {
-    const eq = entry.indexOf('=');
-    if (eq === -1) continue;
-    if (normalizeRegistry(entry.slice(0, eq).trim()) !== registry) continue;
-    const creds = entry.slice(eq + 1).trim();
-    const colon = creds.indexOf(':');
-    if (colon === -1) continue;
-    return { username: creds.slice(0, colon), password: creds.slice(colon + 1) };
-  }
-  return null;
+  const entry = registryAuth().find((e) => normalizeRegistry(e.registry) === registry);
+  return entry ? { username: entry.username, password: entry.password } : null;
 }
 
 function configPath() {
@@ -87,10 +77,10 @@ export async function authHint(image) {
   const { helper } = await fromDockerConfig(registry);
   if (helper) {
     return `${registry} requires authentication. Your docker login uses a credential helper (credsStore), `
-      + `which DockerUpdates cannot read: set REGISTRY_AUTH=${registry}=user:token instead.`;
+      + `which DockerUpdates cannot read: add ${registry} in Settings → Registry credentials instead.`;
   }
   return `${registry} requires authentication. Run "docker login ${registry}" on the host and mount `
-    + `~/.docker/config.json into the container (read-only), or set REGISTRY_AUTH=${registry}=user:token.`;
+    + `~/.docker/config.json into the container (read-only), or add ${registry} in Settings → Registry credentials.`;
 }
 
 export function isAuthError(err) {

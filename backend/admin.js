@@ -9,6 +9,7 @@ import * as auth from './auth.js';
 import { docker, selfId } from './docker.js';
 import { addBan, isBanned, listBans, normalizeIp, removeBan } from './ipBans.js';
 import { LOG_CHANNELS, LOG_LEVELS, logPage, logsSince, recentLevels, subscribeLogs } from './logBuffer.js';
+import { allowedOrigins, cookieSecure, sessionSecretSource, trustProxy } from './runtimeConfig.js';
 import { getSecurity, securityInfo, updateSecurity } from './securitySettings.js';
 import { DATA_DIR } from './store.js';
 
@@ -140,14 +141,15 @@ adminRouter.post('/ip-access/bans/remove', handle(async (req) => {
 // ---------- Security settings ----------
 
 function securityStatus(req) {
-  const trustProxy = process.env.TRUST_PROXY?.trim() || '';
+  const tp = trustProxy();
   return {
-    trustProxy,
-    cookieSecureForced: process.env.COOKIE_SECURE === 'true',
+    trustProxy: tp.enabled ? tp.value : '',
+    cookieSecureForced: cookieSecure(),
     connectionSecure: req.secure,
-    allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
-    sessionSecretSet: Boolean(process.env.SESSION_SECRET),
-    passwordLength: (process.env.ADMIN_PASSWORD ?? '').length,
+    allowedOrigins: allowedOrigins(),
+    sessionSecretSet: sessionSecretSource() !== 'random',
+    // null: the password was changed in Settings (only its hash is stored)
+    passwordLength: auth.accountInfo().passwordLength,
     yourIp: normalizeIp(req.ip),
     peerIp: normalizeIp(req.socket.remoteAddress),
   };

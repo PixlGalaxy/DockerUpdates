@@ -96,7 +96,8 @@ export interface SecurityInfo {
     connectionSecure: boolean
     allowedOrigins: string[]
     sessionSecretSet: boolean
-    passwordLength: number
+    /** null: the password was changed in Settings (only its hash is stored) */
+    passwordLength: number | null
     yourIp: string
     peerIp: string
   }
@@ -144,4 +145,54 @@ export interface SystemInfo {
     disk: { totalBytes: number; usedBytes: number } | null
     parts: { name: string; bytes: number; files: number }[]
   }
+}
+
+// ---------- Settings → Account / Server & access (/api/config) ----------
+
+/** Where a value comes from: saved in Settings, the .env file, detected or a built-in default */
+export type ConfigSource = 'settings' | 'env' | 'auto' | 'default' | 'random'
+
+export interface RegistryCredential {
+  registry: string
+  username: string
+  /** "********" for a stored token */
+  password: string
+}
+
+export interface ServerConfig {
+  hostIp: { value: string; source: ConfigSource }
+  hostName: { value: string; source: ConfigSource }
+  trustProxy: { enabled: boolean; value: string; source: ConfigSource }
+  cookieSecure: { value: boolean; source: ConfigSource }
+  allowedOrigins: { value: string[]; source: ConfigSource }
+  sessionSecret: { set: boolean; source: ConfigSource }
+  registryAuth: { value: RegistryCredential[]; source: ConfigSource }
+  readOnly: { port: string; docker: string }
+  account: {
+    user: string
+    source: { user: 'settings' | 'env'; password: 'settings' | 'env' }
+    resetLoginConfig: boolean
+    minPassword: number
+    passwordLength: number | null
+  }
+  host: {
+    /** IP in use (header, LAN IP:Port links) */
+    ip: string
+    detectedIp: string | null
+    addresses: string[] | null
+    /** null = could not be verified */
+    ipIsLocal: boolean | null
+    autoName: string
+  }
+  connectionSecure: boolean
+}
+
+export interface ServerConfigPatch {
+  hostIp?: string
+  hostName?: string
+  trustProxy?: { enabled: boolean; value: string }
+  cookieSecure?: boolean
+  allowedOrigins?: string[]
+  sessionSecret?: string
+  registryAuth?: RegistryCredential[]
 }

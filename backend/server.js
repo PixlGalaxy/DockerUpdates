@@ -19,6 +19,7 @@ import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import { startOperation, streamOperation } from './operations.js';
 import * as scheduler from './scheduler.js';
+import { onConfigChange, publicConfig, trustProxySetting as currentTrustProxy, updateConfig } from './runtimeConfig.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
 import { iconFile, initIcons, resetAutoIcon } from './icons.js';
@@ -39,6 +40,8 @@ const VERSION = process.env.APP_VERSION || 'dev';
 
 // Proxies trusted for X-Forwarded-For / X-Forwarded-Proto (set TRUST_PROXY to the NPM IP).
 app.set('trust proxy', trustProxySetting());
+// Saved in Settings → Server & access: applies to the next request, no restart needed
+onConfigChange(() => app.set('trust proxy', currentTrustProxy()));
 app.disable('x-powered-by');
 // Banned addresses (Admin -> IP access) get nothing, not even the static files
 app.use(banGuard);
@@ -55,7 +58,7 @@ app.param('id', validContainerRef);
 const ok = { ok: true };
 const handle = (fn) => async (req, res) => {
   try {
-    res.json(await fn(req));
+    res.json(await fn(req, res));
   } catch (err) {
     // Never forward a Docker API 401: the frontend treats 401 as "session expired".
     const code = err.status || (err.statusCode && err.statusCode !== 401 ? err.statusCode : 500);
@@ -190,6 +193,39 @@ app.put('/api/settings', handle((req) => updateSettings(req.body ?? {})));
 app.post('/api/settings/test/:channel', handle(async (req) => {
   await testChannel(req.params.channel, await dk.hostName());
   return ok;
+}));
+// Server & access settings (values from .env can be overridden here) and the login account
+async function configView(req) {
+  const detected = dk.detectedHostInfo();
+  const ip = dk.hostIp();
+  return {
+    ...publicConfig(),
+    account: auth.accountInfo(),
+    host: {
+      ip,
+      detectedIp: detected?.ip ?? null,
+      addresses: detected?.addresses ?? null,
+      // null = could not be verified (detection not available outside a bridge container)
+      ipIsLocal: detected ? detected.addresses.includes(ip) : null,
+      autoName: await dk.autoHostName(),
+    },
+    connectionSecure: req.secure,
+  };
+}
+const SECRET_KEYS = new Set(['sessionSecret', 'registryAuth']);
+app.get('/api/config', handle((req) => configView(req)));
+app.put('/api/config', handle(async (req, res) => {
+  const body = req.body ?? {};
+  await updateConfig(body);
+  if ('sessionSecret' in body) await auth.afterSecretChange(req, res);
+  const shown = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, SECRET_KEYS.has(k) ? '(changed)' : v]));
+  auth.audit(req, `user="${req.user}" changed server settings ${JSON.stringify(shown)}`);
+  return configView(req);
+}));
+app.post('/api/config/username', handle(async (req, res) => ({ ...(await auth.changeUsername(req, res)), config: await configView(req) })));
+app.post('/api/config/password', handle(async (req, res) => {
+  await auth.changePassword(req, res);
+  return configView(req);
 }));
 app.get('/api/timezones', handle(() => Intl.supportedValuesOf('timeZone')));
 app.get('/api/auto-update/status', handle(() => scheduler.status()));
