@@ -78,7 +78,6 @@ cat > .env <<EOF
 ADMIN_USER=admin
 ADMIN_PASSWORD=$(openssl rand -base64 18)
 SESSION_SECRET=$(openssl rand -hex 32)
-HOST_IP=$(hostname -I | awk '{print $1}')
 EOF
 chmod 600 .env
 
@@ -137,7 +136,7 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `SESSION_HOURS` | | `12` | Maximum session lifetime (initial value, then editable in Settings > Login & sessions) |
 | `SESSION_IDLE_MINUTES` | | `120` | Sign out after this much inactivity (initial value, then editable in Settings) |
 | `PORT` | | `3000` | HTTP port inside the container |
-| `HOST_IP` | | auto | IP shown in the header and the *LAN IP:Port* links. Set it when running in Docker |
+| `HOST_IP` | | auto | IP shown in the header and the *LAN IP:Port* links. Detected automatically (and kept up to date if it changes); set it only to pick another address of the server. A value that is not an address of the server is ignored with a warning in the server logs |
 | `HOST_NAME` | | Docker host name | Server name shown in the header |
 | `REGISTRY_AUTH` | | | Registry credentials, e.g. `ghcr.io=user:token,docker.io=user:token` |
 | `TRUST_PROXY` | | private networks | IP of your reverse proxy (trusted for `X-Forwarded-*`) |

@@ -81,8 +81,20 @@ function isLocalImageRef(image) {
 
 // ---------- Listing ----------
 
+// Set by hostAddress.js: the server's real LAN IP, read from the host network namespace
+// (inside a container, os.networkInterfaces() only shows the container's own addresses).
+let detectedHost = null; // { ip, addresses: string[] }
+
+export function setDetectedHost(value) {
+  detectedHost = value;
+}
+
+/** HOST_IP when it is an address of this server, else the detected LAN IP. */
 export function hostIp() {
-  if (process.env.HOST_IP) return process.env.HOST_IP;
+  const configured = process.env.HOST_IP?.trim();
+  if (configured && (!detectedHost || detectedHost.addresses.includes(configured))) return configured;
+  if (detectedHost) return detectedHost.ip;
+  if (configured) return configured;
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list ?? []) {
       if (i.family === 'IPv4' && !i.internal) return i.address;
@@ -376,6 +388,16 @@ async function pull(image, log = silent) {
     // Docker API status codes (e.g. 401) must not reach the browser as-is.
     throw httpError(502, `Pull failed for ${image}: ${err.json?.message ?? err.message}`);
   }
+}
+
+// Delay before checking a container that was just created / edited, so it shows its
+// update status instead of "Not checked" until the next background check.
+const CHECK_AFTER_START_MS = 3000;
+
+function checkUpdateSoon(ref) {
+  setTimeout(() => {
+    checkUpdate(ref).catch((err) => console.warn(`Update check after start failed for ${ref}: ${err.message}`));
+  }, CHECK_AFTER_START_MS).unref();
 }
 
 /** Pulls the image and compares its ID with the one the container uses. */
@@ -807,6 +829,7 @@ export async function editContainer(id, spec) {
   updateStatus.delete(oldName);
   if (name !== oldName) await renameInHistory(oldName, name);
   await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
+  checkUpdateSoon(name);
   return { name };
 }
 
@@ -821,5 +844,6 @@ export async function createContainer(spec) {
   await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
   const container = await docker.createContainer(options);
   await container.start();
+  checkUpdateSoon(container.id);
   return container.id;
 }
