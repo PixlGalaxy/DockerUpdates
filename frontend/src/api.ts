@@ -102,6 +102,8 @@ export const api = {
     post<LanStatus>('/api/lan-network/enable', cfg),
   checkIp: (network: string, ip: string, container?: string) =>
     post<{ available: boolean; reason: string }>('/api/networks/check-ip', { network, ip, container }),
+  checkPorts: (ports: { host: string; protocol: 'tcp' | 'udp' }[], container?: string) =>
+    post<{ results: { index: number; inUse: boolean; reason?: string }[] }>('/api/ports/check', { ports, container }),
   checkExtraParams: (extraParams: string) =>
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
   host: () => request<HostInfo>('/api/host'),

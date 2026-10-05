@@ -12,6 +12,7 @@ import { startHealthMonitor } from './health.js';
 import { listHistory } from './history.js';
 import { hostUsage } from './hostUsage.js';
 import { checkIp } from './ipCheck.js';
+import { checkPorts } from './portCheck.js';
 import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
@@ -92,6 +93,7 @@ app.post('/api/lan-network/enable', handle((req) => enableLan(req.body ?? {})));
 app.post('/api/networks/check-ip', handle((req) =>
   checkIp(String(req.body?.network ?? ''), String(req.body?.ip ?? '').trim(), req.body?.container)));
 app.post('/api/extra-params/check', handle((req) => dk.checkExtraParams(req.body?.extraParams ?? '')));
+app.post('/api/ports/check', handle((req) => checkPorts(req.body?.ports, req.body?.container)));
 
 // Container icons (cached files, see icons.js)
 app.get('/api/icons/:key', async (req, res) => {

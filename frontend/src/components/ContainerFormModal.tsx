@@ -85,6 +85,9 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
   const [extraCheck, setExtraCheck] = useState<ExtraCheck>({ state: 'idle' })
   const [iconBroken, setIconBroken] = useState(false)
   const checkSeq = useRef(0)
+  // Host ports already taken (by another container or a service on the server), by row index
+  const [portConflicts, setPortConflicts] = useState<Record<number, string>>({})
+  const portSeq = useRef(0)
   const editing = mode === 'edit'
 
   useEffect(() => {
@@ -151,6 +154,28 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
     )
     return () => clearTimeout(timer)
   }, [form.extraParams])
+
+  // Check the host ports while typing (debounced)
+  const portKey = JSON.stringify(form.ports.map((p) => [p.host.trim(), p.protocol]))
+  useEffect(() => {
+    const seq = ++portSeq.current
+    const ports = (JSON.parse(portKey) as [string, 'tcp' | 'udp'][]).map(([host, protocol]) => ({ host, protocol }))
+    const timer = setTimeout(
+      () => {
+        if (!ports.some((p) => p.host)) return setPortConflicts({})
+        api.checkPorts(ports, editing ? initial?.name : undefined).then(
+          (r) => {
+            if (seq !== portSeq.current) return
+            setPortConflicts(Object.fromEntries(r.results.filter((x) => x.inUse).map((x) => [x.index, x.reason ?? 'Port already in use'])))
+          },
+          // The check is only a hint: Docker still reports a real conflict on create
+          () => seq === portSeq.current && setPortConflicts({}),
+        )
+      },
+      500,
+    )
+    return () => clearTimeout(timer)
+  }, [portKey, editing, initial?.name])
 
   const patch = (p: Partial<ContainerSpec>) => setForm((f) => ({ ...f, ...p }))
 
@@ -352,14 +377,27 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
           >
             <ColumnHeads labels={['Host port (on the server)', 'Container port (inside the app)']} extra="w-24" />
             {form.ports.map((p, i) => (
-              <div key={i} className="flex gap-2">
-                <input className={inputCls} placeholder="Host port (8080 or 127.0.0.1:8080)" value={p.host} onChange={(e) => updateAt('ports', i, { host: e.target.value })} />
-                <input className={inputCls} placeholder="Container port" inputMode="numeric" value={p.container} onChange={(e) => updateAt('ports', i, { container: e.target.value })} />
-                <select className={`${inputCls} !w-24`} value={p.protocol} onChange={(e) => updateAt('ports', i, { protocol: e.target.value as 'tcp' | 'udp' })}>
-                  <option value="tcp">TCP</option>
-                  <option value="udp">UDP</option>
-                </select>
-                <RemoveBtn onClick={() => removeAt('ports', i)} />
+              <div key={i}>
+                <div className="flex gap-2">
+                  <input
+                    className={`${inputCls} ${portConflicts[i] ? '!border-red-500 focus:!ring-red-500/20' : ''}`}
+                    placeholder="Host port (8080 or 127.0.0.1:8080)"
+                    value={p.host}
+                    aria-invalid={portConflicts[i] ? true : undefined}
+                    onChange={(e) => updateAt('ports', i, { host: e.target.value })}
+                  />
+                  <input className={inputCls} placeholder="Container port" inputMode="numeric" value={p.container} onChange={(e) => updateAt('ports', i, { container: e.target.value })} />
+                  <select className={`${inputCls} !w-24`} value={p.protocol} onChange={(e) => updateAt('ports', i, { protocol: e.target.value as 'tcp' | 'udp' })}>
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                  </select>
+                  <RemoveBtn onClick={() => removeAt('ports', i)} />
+                </div>
+                {portConflicts[i] && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+                    <CircleAlert size={13} className="shrink-0" /> {portConflicts[i]}
+                  </p>
+                )}
               </div>
             ))}
           </Section>

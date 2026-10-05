@@ -15,7 +15,10 @@ const ICON_DIR = path.join(DATA_DIR, 'icons');
 const DB_FILE = path.join(DATA_DIR, 'icons.json');
 
 const MAX_BYTES = 1024 * 1024;
+// Favicon discovery probes LAN services: keep it short. A custom Icon URL is usually on the
+// internet (GitHub, a CDN...), which can be much slower.
 const FETCH_TIMEOUT_MS = 2500;
+const CUSTOM_FETCH_TIMEOUT_MS = 15_000;
 const FAVICON_RETRY_MS = 6 * 3600_000;
 const UNRAID_LABEL = 'net.unraid.docker.icon';
 
@@ -81,9 +84,9 @@ function sniffType(buf, headerType) {
   return null;
 }
 
-async function fetchLimited(url, { accept } = {}) {
+async function fetchLimited(url, { accept, timeout = FETCH_TIMEOUT_MS } = {}) {
   const res = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeout),
     redirect: 'follow',
     headers: { 'User-Agent': 'DockerUpdates', ...(accept ? { Accept: accept } : {}) },
   });
@@ -100,11 +103,42 @@ async function fetchLimited(url, { accept } = {}) {
   return { buf: Buffer.concat(chunks), type: res.headers.get('content-type'), url: res.url };
 }
 
-async function downloadImage(url) {
-  const { buf, type } = await fetchLimited(url, { accept: 'image/*' });
+async function downloadImage(url, { timeout } = {}) {
+  const { buf, type } = await fetchLimited(url, { accept: 'image/*', timeout });
   const mime = sniffType(buf, type);
-  if (!mime || buf.length === 0) throw new Error('The URL does not point to an image (png, jpg, webp, gif, svg, ico)');
+  if (!mime || buf.length === 0) {
+    if (/^\s*(<!doctype html|<html)/i.test(buf.slice(0, 512).toString())) {
+      throw new Error('the URL opens a web page, not an image. Use the direct link to the image file (right-click the image > Copy image address).');
+    }
+    throw new Error('the URL does not point to an image (png, jpg, webp, gif, svg, ico)');
+  }
   return { buf, mime };
+}
+
+/**
+ * Links copied from a repository page point to the HTML viewer, not the file:
+ *   github.com/owner/repo/blob/branch/path -> raw.githubusercontent.com/owner/repo/branch/path
+ *   gitlab.com/owner/repo/-/blob/branch/path -> gitlab.com/owner/repo/-/raw/branch/path
+ */
+export function directImageUrl(url) {
+  if (url.hostname === 'github.com') {
+    const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/(?:blob|raw)\/(.+)$/);
+    if (m) return new URL(`https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}`);
+  }
+  if (url.hostname === 'gitlab.com' && url.pathname.includes('/-/blob/')) {
+    return new URL(url.href.replace('/-/blob/', '/-/raw/'));
+  }
+  return url;
+}
+
+function describeFetchError(err) {
+  if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+    return `the server did not answer within ${CUSTOM_FETCH_TIMEOUT_MS / 1000} s. Check the URL, and that DockerUpdates can reach the internet (DNS / firewall).`;
+  }
+  // fetch() hides the real reason (DNS, refused, TLS...) in err.cause
+  const cause = err.cause?.code || err.cause?.message;
+  if (err.message === 'fetch failed' && cause) return `could not connect (${cause})`;
+  return err.message;
 }
 
 async function storeFile(repo, { buf, mime }) {
@@ -154,11 +188,12 @@ export async function setCustomIcon(image, url) {
 
   let image_;
   try {
-    image_ = await downloadImage(parsed.href);
+    image_ = await downloadImage(directImageUrl(parsed).href, { timeout: CUSTOM_FETCH_TIMEOUT_MS });
   } catch (err) {
-    throw bad(`Could not use Icon URL: ${err.message}`);
+    throw bad(`Could not use Icon URL: ${describeFetchError(err)}`);
   }
   const stored = await storeFile(repo, image_);
+  // Keep the URL as typed so the editor shows what the user entered
   db[repo] = { source: 'custom', url: parsed.href, ...stored };
   await save();
 }
