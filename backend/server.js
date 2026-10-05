@@ -10,6 +10,7 @@ import { attachConsole } from './console.js';
 import * as dk from './docker.js';
 import { startHealthMonitor } from './health.js';
 import { listHistory } from './history.js';
+import { startHostAddressDetection } from './hostAddress.js';
 import { hostUsage } from './hostUsage.js';
 import { checkIp } from './ipCheck.js';
 import { checkPorts } from './portCheck.js';
@@ -221,6 +222,7 @@ app.use((err, _req, res, _next) => {
 await Promise.all([initIcons(), loadSettings()]);
 await scheduler.startScheduler();
 startHealthMonitor();
+startHostAddressDetection();
 
 const server = http.createServer(app);
 attachConsole(server, {

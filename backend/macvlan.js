@@ -24,13 +24,13 @@ function parseCidr(cidr) {
 
 const inside = (ip, c) => ((toInt(ip) & c.mask) >>> 0) === c.base;
 
-async function isDockerDesktop() {
+export async function isDockerDesktop() {
   const info = await docker.info();
   return /docker desktop/i.test(info.OperatingSystem ?? '') || info.Name === 'docker-desktop';
 }
 
 /** Runs a command in a helper container that shares the host network. */
-async function runOnHostNetwork(cmd) {
+export async function runOnHostNetwork(cmd) {
   let image = FALLBACK_IMAGE;
   const self = await selfId();
   if (self) image = (await docker.getContainer(self).inspect()).Config.Image;

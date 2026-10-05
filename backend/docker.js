@@ -81,8 +81,20 @@ function isLocalImageRef(image) {
 
 // ---------- Listing ----------
 
+// Set by hostAddress.js: the server's real LAN IP, read from the host network namespace
+// (inside a container, os.networkInterfaces() only shows the container's own addresses).
+let detectedHost = null; // { ip, addresses: string[] }
+
+export function setDetectedHost(value) {
+  detectedHost = value;
+}
+
+/** HOST_IP when it is an address of this server, else the detected LAN IP. */
 export function hostIp() {
-  if (process.env.HOST_IP) return process.env.HOST_IP;
+  const configured = process.env.HOST_IP?.trim();
+  if (configured && (!detectedHost || detectedHost.addresses.includes(configured))) return configured;
+  if (detectedHost) return detectedHost.ip;
+  if (configured) return configured;
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list ?? []) {
       if (i.family === 'IPv4' && !i.internal) return i.address;
