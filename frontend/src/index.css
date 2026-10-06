@@ -40,6 +40,25 @@ body {
   @apply bg-bg font-sans text-fg antialiased;
 }
 
+/* Taps on buttons never trigger the double-tap zoom of mobile browsers (pinch zoom still works) */
+html {
+  touch-action: manipulation;
+}
+
+/*
+ * Phones and tablets: iOS Safari zooms into any text field whose font is smaller than 16px
+ * when it gets focus (and does not zoom back out). Unlayered, so it wins over the
+ * text-sm / text-xs utilities; desktop sizes are unchanged. Also covers xterm's hidden
+ * textarea used by the console.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
