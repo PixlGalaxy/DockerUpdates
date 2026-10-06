@@ -105,7 +105,7 @@ export default function LogsModal({ container, onClose }: { container: Container
       flush
       onClose={onClose}
     >
-      <div className="flex h-[78vh] flex-col">
+      <div className="flex h-[78dvh] flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
           <div className="relative min-w-48 flex-1">
             <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />

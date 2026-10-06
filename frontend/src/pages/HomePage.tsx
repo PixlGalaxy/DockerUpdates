@@ -24,6 +24,7 @@ import ContextMenu, { type MenuItem } from '../components/ContextMenu'
 import HistoryModal from '../components/HistoryModal'
 import LogsModal from '../components/LogsModal'
 import StatsCards, { type Filter } from '../components/StatsCards'
+import BackgroundUpdate from '../components/BackgroundUpdate'
 import UpdateProgressModal from '../components/UpdateProgressModal'
 import type { ToastTone } from '../components/Toasts'
 import { ActionBar, TopBar } from '../components/Toolbar'
@@ -82,6 +83,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [menu, setMenu] = useState<{ container: ContainerInfo; x: number; y: number } | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
   const [updateOp, setUpdateOp] = useState<{ id: string; title: string } | null>(null)
+  // Update whose log was closed while it was still running (notice at the top)
+  const [backgroundOp, setBackgroundOp] = useState<{ id: string; title: string } | null>(null)
 
   /** Opens the live update log (one container, several, or all with an update) */
   async function startUpdate(ids?: string[]) {
@@ -356,10 +359,26 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
           opId={updateOp.id}
           title={updateOp.title}
           onSelfUpdate={onSelfUpdate}
-          onClose={() => {
+          onClose={(finished) => {
+            if (!finished) setBackgroundOp(updateOp)
             setUpdateOp(null)
             void refresh()
           }}
+        />
+      )}
+
+      {backgroundOp && !updateOp && (
+        <BackgroundUpdate
+          key={backgroundOp.id}
+          opId={backgroundOp.id}
+          title={backgroundOp.title}
+          onOpen={() => {
+            setUpdateOp(backgroundOp)
+            setBackgroundOp(null)
+          }}
+          onDismiss={() => setBackgroundOp(null)}
+          onFinished={() => void refresh()}
+          onSelfUpdate={onSelfUpdate}
         />
       )}
 
