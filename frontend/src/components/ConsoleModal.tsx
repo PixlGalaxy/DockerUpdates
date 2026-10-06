@@ -124,7 +124,7 @@ export default function ConsoleModal({ container, onClose }: { container: Contai
         ) : null
       }
     >
-      <div className="h-[78vh] bg-[#0b0e14] p-2">
+      <div className="h-[78dvh] bg-[#0b0e14] p-2">
         <div ref={host} className="size-full" />
       </div>
     </Modal>

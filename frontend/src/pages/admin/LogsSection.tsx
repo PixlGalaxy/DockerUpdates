@@ -155,7 +155,7 @@ export default function LogsSection({ onError }: SectionProps) {
         </div>
       </div>
 
-      <div className="max-h-[65vh] min-h-64 overflow-auto bg-[#0b0e14] py-2 font-mono text-[12px] leading-[1.55]">
+      <div className="max-h-[65dvh] min-h-64 overflow-auto bg-[#0b0e14] py-2 font-mono text-[12px] leading-[1.55]">
         {!data ? (
           <Loading />
         ) : data.entries.length === 0 ? (
