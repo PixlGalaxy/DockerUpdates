@@ -40,6 +40,12 @@
 - **Secure by default**: login, revocable sessions, brute-force lockout with limits editable in Settings, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))
 - Light / dark theme, search and filters, Linux and Windows (Docker Desktop) hosts
 
+## Documentation
+
+The full documentation is in the **[wiki](https://github.com/PixlGalaxy/DockerUpdates/wiki)** (source in [`docs/wiki`](docs/wiki/Home.md)):
+
+[Installation](docs/wiki/Installation.md) · [Configuration (every variable)](docs/wiki/Configuration.md) · [Settings](docs/wiki/Settings.md) · [Automatic updates](docs/wiki/Automatic-Updates.md) · [Notifications](docs/wiki/Notifications.md) · [Reverse proxy](docs/wiki/Reverse-Proxy.md) · [Private registries](docs/wiki/Private-Registries.md) · [LAN network](docs/wiki/LAN-Network.md) · [Admin Panel](docs/wiki/Admin-Panel.md) · [Security](docs/wiki/Security.md) · [Troubleshooting](docs/wiki/Troubleshooting.md)
+
 ## Screenshots
 
 <table>
@@ -126,7 +132,7 @@ The `data` volume keeps settings, notification channels, update history, templat
 
 ## Configuration
 
-All settings are environment variables (see [`backend/.env.example`](backend/.env.example)). Most of them can also be changed later in the web UI, in **Settings > Account** (username and password), **Settings > Server & access** and **Settings > Registry credentials**. A value saved in the UI takes precedence over `.env`.
+All settings are environment variables (see [`backend/.env.example`](backend/.env.example)); each one is explained with examples in [Configuration](docs/wiki/Configuration.md). Most of them can also be changed later in the web UI, in **Settings > Account** (username and password), **Settings > Server & access** and **Settings > Registry credentials**. A value saved in the UI takes precedence over `.env`.
 
 | Variable | Required | Default | Description |
 | --- | :---: | --- | --- |
