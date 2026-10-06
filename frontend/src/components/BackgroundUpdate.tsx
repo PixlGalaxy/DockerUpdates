@@ -73,6 +73,19 @@ export default function BackgroundUpdate({ opId, title, onOpen, onDismiss, onFin
     lost: 'Lost track of the update (it keeps running on the server)',
   }[state]
   const Icon = state === 'ok' ? CircleCheck : state === 'failed' ? CircleAlert : Bomb
+  // The log can be opened while it runs or after errors; a successful update is only a notice
+  const canOpen = state !== 'ok'
+  const content = (
+    <>
+      <Icon size={20} className={`shrink-0 ${state === 'running' ? 'animate-pulse' : ''}`} />
+      <span className="min-w-0">
+        <span className="block text-sm leading-tight font-semibold">{text}</span>
+        <span className="block truncate text-xs opacity-90">
+          {state === 'failed' && detail ? `${detail} · tap to see the log` : canOpen ? `${title} · tap to see the log` : title}
+        </span>
+      </span>
+    </>
+  )
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-[72px] z-[60] flex justify-center px-4">
@@ -80,13 +93,13 @@ export default function BackgroundUpdate({ opId, title, onOpen, onDismiss, onFin
         role="status"
         className={`pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl py-2.5 pr-2 pl-3.5 shadow-lg transition-colors duration-300 animate-[toast-in_.2s_ease-out] ${TONES[state]}`}
       >
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" title="Show the update log">
-          <Icon size={20} className={`shrink-0 ${state === 'running' ? 'animate-pulse' : ''}`} />
-          <span className="min-w-0">
-            <span className="block text-sm leading-tight font-semibold">{text}</span>
-            <span className="block truncate text-xs opacity-90">{state === 'failed' && detail ? detail : `${title} · tap to see the log`}</span>
-          </span>
-        </button>
+        {canOpen ? (
+          <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" title="Show the update log">
+            {content}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3">{content}</div>
+        )}
         <button
           type="button"
           aria-label="Dismiss"

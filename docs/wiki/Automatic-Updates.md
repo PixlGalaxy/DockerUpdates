@@ -22,7 +22,7 @@ Other states: **Up to date**, **Auth required** (private registry, see [Private 
 - **Update available** button on a row, or **Force update** in the right-click menu (recreates even without a new image).
 - **Update all** at the bottom: every container with an update.
 
-The live log shows the pull progress, the equivalent `docker run` command and the cleanup. You can close it while the update runs: a notice at the top follows it (orange while running, green when it finishes and then hides after 3 seconds, red if something failed); tap it to open the log again. The container is recreated with **exactly the same configuration** (ports, volumes, environment, networks, labels, restart policy…). If the new container fails to start, the previous one is restored.
+The live log shows the pull progress, the equivalent `docker run` command and the cleanup. You can close it while the update runs: a notice at the top follows it (orange while running, green when it finishes and then hides after 3 seconds, red if something failed). While it runs or after errors, tap it to open the log again. The container is recreated with **exactly the same configuration** (ports, volumes, environment, networks, labels, restart policy…). If the new container fails to start, the previous one is restored.
 
 DockerUpdates updates itself through a short-lived helper container, and the page reloads by itself.
 
