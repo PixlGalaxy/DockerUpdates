@@ -18,7 +18,8 @@ type Event =
 interface Props {
   opId: string
   title: string
-  onClose: () => void
+  /** `finished`: false when closed while the update is still running */
+  onClose: (finished: boolean) => void
   onSelfUpdate: () => void
 }
 
@@ -99,7 +100,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
       icon={<CloudDownload size={18} />}
       size="xl"
       flush
-      onClose={onClose}
+      onClose={() => onClose(Boolean(done))}
     >
       <div className="flex h-[78dvh] flex-col">
         <div
@@ -156,7 +157,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
               <span className={`hidden items-center gap-1.5 text-sm font-medium sm:inline-flex ${failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 {failed ? <CircleAlert size={16} /> : <CircleCheck size={16} />} {failed ? 'Completed with errors' : 'Completed successfully'}
               </span>
-              <Button variant="primary" onClick={onClose}>
+              <Button variant="primary" onClick={() => onClose(true)}>
                 Done
               </Button>
             </>
