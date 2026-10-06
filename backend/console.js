@@ -5,6 +5,7 @@
 import { WebSocketServer } from 'ws';
 import { audit } from './auth.js';
 import { docker } from './docker.js';
+import { consoleKeepalive } from './runtimeConfig.js';
 
 const PATH_RE = /^\/api\/containers\/([a-zA-Z0-9][a-zA-Z0-9_.-]{0,127})\/console(?:\?.*)?$/;
 // Prefer bash, fall back to sh (alpine, busybox...)
@@ -75,6 +76,11 @@ async function session(ws, id, who) {
       Env: ['TERM=xterm-256color', 'COLORTERM=truecolor'],
     });
     stream = await exec.start({ hijack: true, stdin: true, Tty: true });
+    // Keep-alive (Settings > Server & access): a ping frame counts as traffic for the reverse
+    // proxy, so an idle console is not cut. Browsers answer pings on their own.
+    const every = consoleKeepalive();
+    const keepalive = every > 0 ? setInterval(() => ws.readyState === ws.OPEN && ws.ping(), every * 1000) : null;
+    ws.on('close', () => clearInterval(keepalive));
     audit({ ip: who.ip }, `user="${who.user}" console opened in ${info.Name.replace(/^\//, '')}`);
 
     stream.on('data', (chunk) => ws.readyState === ws.OPEN && ws.send(chunk, { binary: true }));

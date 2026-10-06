@@ -65,6 +65,7 @@ Values from `.env` are shown filled in and can be overridden here. What you save
 | Trust a reverse proxy | [`TRUST_PROXY`](Configuration.md#trust_proxy) | Switch plus the proxy IPs (comma separated, ranges allowed). The field is greyed out while the switch is off |
 | HTTPS-only session cookie | [`COOKIE_SECURE`](Configuration.md#cookie_secure) | Warns you when you turn it on while using plain HTTP |
 | Extra allowed origins | [`ALLOWED_ORIGINS`](Configuration.md#allowed_origins) | Normally empty |
+| Console keep-alive | [`CONSOLE_WS_KEEPALIVE`](Configuration.md#console_ws_keepalive) | Seconds between pings on an open console so the reverse proxy does not close it when idle. 0 = off; 25 for Nginx Proxy Manager |
 | Session secret | [`SESSION_SECRET`](Configuration.md#session_secret) | Shows *Configured* or *Not set*. **Change** generates a random secret (you can also type one, 32+ characters); it is only visible until you save. Saving signs out every other session |
 | PORT, Docker connection | [`PORT`](Configuration.md#port), [`DOCKER_HOST`](Configuration.md#docker_host--docker_socket) | Read-only: only in `.env` |
 

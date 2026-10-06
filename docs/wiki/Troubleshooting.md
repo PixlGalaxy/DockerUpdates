@@ -48,6 +48,7 @@ The console shows the reason in red inside the terminal:
 - *Could not open the console connection*: the connection never reached DockerUpdates. Almost always the reverse proxy does not allow WebSockets: in Nginx Proxy Manager turn on **Websockets Support** in the proxy host; in Cloudflare turn on *Network > WebSockets*. See [Reverse proxy](Reverse-Proxy.md).
 - *Origin not allowed*: the proxy changes the `Host` header. Pass it unchanged, or add the public address to [Allowed origins](Configuration.md#allowed_origins).
 - *Your session expired*: sign in again.
+- *Session closed · Connection lost* after about a minute without typing: the reverse proxy closes idle connections. Set **Console keep-alive** to `25` in Settings > Server & access ([`CONSOLE_WS_KEEPALIVE`](Configuration.md#console_ws_keepalive)).
 - *The container is not running* / *has no shell*: the container must be running and have `sh` or `bash` (minimal images such as distroless or scratch have none).
 
 Refused connections are also written to **Admin Panel > Server logs** as `console refused: …`, with the origin and host the server received.
