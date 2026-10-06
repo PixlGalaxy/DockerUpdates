@@ -35,8 +35,17 @@ export default function ConsoleModal({ container, onClose }: { container: Contai
     ws.binaryType = 'arraybuffer'
     const send = (msg: object) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg))
     const sendSize = () => send({ type: 'resize', cols: term.cols, rows: term.rows })
+    let opened = false
+    let disposed = false
+    // Errors are also written in the terminal: the subtitle is cut on small screens
+    const showError = (text: string) => {
+      setStatus('error')
+      setMessage(text)
+      term.writeln(`\r\n\x1b[31m${text}\x1b[0m`)
+    }
 
     ws.onopen = () => {
+      opened = true
       setStatus('connected')
       sendSize()
     }
@@ -44,9 +53,7 @@ export default function ConsoleModal({ container, onClose }: { container: Contai
       if (typeof e.data === 'string') {
         const msg = JSON.parse(e.data)
         if (msg.type === 'error') {
-          setStatus('error')
-          setMessage(msg.message)
-          term.writeln(`\r\n\x1b[31m${msg.message}\x1b[0m`)
+          showError(msg.message)
         } else if (msg.type === 'exit') {
           term.writeln('\r\n\x1b[90m[session ended]\x1b[0m')
         }
@@ -55,8 +62,19 @@ export default function ConsoleModal({ container, onClose }: { container: Contai
       term.write(new Uint8Array(e.data))
     }
     ws.onclose = (e) => {
+      if (disposed) return // closed by us (modal closed / reconnect)
+      // 4401 / 4403: refused by the server, which already sent the reason
+      if (e.code === 4401 || e.code === 4403) return
+      if (!opened) {
+        // The WebSocket never reached DockerUpdates (or was dropped on the way)
+        showError(
+          'Could not open the console connection. If you open DockerUpdates through a reverse proxy, enable WebSocket support in it ' +
+            '(Nginx Proxy Manager: "Websockets Support"; Cloudflare: Network > WebSockets). Details may be in Admin Panel > Server logs.',
+        )
+        return
+      }
       setStatus((s) => (s === 'error' ? s : 'closed'))
-      if (e.code === 1006) setMessage('Connection lost or rejected')
+      if (e.code === 1006) setMessage('Connection lost')
     }
 
     const input = term.onData((data) => send({ type: 'input', data }))
@@ -67,6 +85,7 @@ export default function ConsoleModal({ container, onClose }: { container: Contai
     observer.observe(host.current)
 
     return () => {
+      disposed = true
       observer.disconnect()
       input.dispose()
       ws.close()

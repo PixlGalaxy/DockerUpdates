@@ -15,6 +15,10 @@ function reject(socket, code, text) {
   socket.destroy();
 }
 
+// Close codes the browser can read (a rejected HTTP upgrade only shows up as 1006)
+export const CLOSE_UNAUTHORIZED = 4401;
+export const CLOSE_FORBIDDEN_ORIGIN = 4403;
+
 /**
  * auth: { userFor(req) -> username | null, sameOrigin(req) -> boolean, clientIp(req) -> string,
  *         banned(req) -> boolean }
@@ -26,10 +30,25 @@ export function attachConsole(server, auth) {
     const match = req.url?.match(PATH_RE);
     if (auth.banned?.(req)) return reject(socket, 403, 'Forbidden');
     if (!match) return reject(socket, 404, 'Not Found');
-    // Browsers always send Origin on WebSockets: blocks cross-site WebSocket hijacking
-    if (!auth.sameOrigin(req)) return reject(socket, 403, 'Forbidden');
+    // Browsers always send Origin on WebSockets: blocks cross-site WebSocket hijacking.
+    // Refused connections are accepted only to tell the browser why, then closed right away:
+    // nothing runs and no data is sent.
+    const refuse = (code, message, logLine) => {
+      audit({ ip: auth.clientIp(req) }, `console refused: ${logLine} (origin=${req.headers.origin ?? '-'} host=${req.headers.host ?? '-'})`);
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.send(JSON.stringify({ type: 'error', message }));
+        ws.close(code, message.slice(0, 120));
+      });
+    };
+    if (!auth.sameOrigin(req)) {
+      return refuse(
+        CLOSE_FORBIDDEN_ORIGIN,
+        'Origin not allowed: the address in the browser does not match the Host header the server received. If a reverse proxy changes the Host header, add this address to Allowed origins in Settings > Server & access.',
+        'origin not allowed',
+      );
+    }
     const user = auth.userFor(req);
-    if (!user) return reject(socket, 401, 'Unauthorized');
+    if (!user) return refuse(CLOSE_UNAUTHORIZED, 'Your session expired: sign in again.', 'no valid session');
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       void session(ws, match[1], { user, ip: auth.clientIp(req) });
