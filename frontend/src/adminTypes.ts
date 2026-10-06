@@ -167,6 +167,8 @@ export interface ServerConfig {
   allowedOrigins: { value: string[]; source: ConfigSource }
   sessionSecret: { set: boolean; source: ConfigSource }
   registryAuth: { value: RegistryCredential[]; source: ConfigSource }
+  /** Seconds between pings on an open console WebSocket (0 = off) */
+  consoleKeepalive: { value: number; source: ConfigSource; min: number; max: number }
   readOnly: { port: string; docker: string }
   account: {
     user: string
@@ -195,4 +197,5 @@ export interface ServerConfigPatch {
   allowedOrigins?: string[]
   sessionSecret?: string
   registryAuth?: RegistryCredential[]
+  consoleKeepalive?: number
 }

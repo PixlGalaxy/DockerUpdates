@@ -14,6 +14,7 @@ To open DockerUpdates from outside your LAN, put it behind a reverse proxy with 
 5. Tell DockerUpdates about the proxy, in **Settings > Server & access** (applies right away) or in `.env` (recreate the container):
    - **Trust a reverse proxy** on, with the IP of Nginx Proxy Manager ([`TRUST_PROXY`](Configuration.md#trust_proxy))
    - **HTTPS-only session cookie** on ([`COOKIE_SECURE`](Configuration.md#cookie_secure)), once you only use `https://`
+   - **Console keep-alive** set to `25` ([`CONSOLE_WS_KEEPALIVE`](Configuration.md#console_ws_keepalive)), so a console left idle is not closed after 60 seconds
 
 ## Which IP is "the proxy IP"?
 
@@ -55,6 +56,7 @@ labels:
 | Symptom | Cause and fix |
 | --- | --- |
 | *Origin not allowed* when saving anything | The proxy changes the `Host` header. Pass it unchanged, or add the public URL to `ALLOWED_ORIGINS` |
-| The console stays blank or disconnects | WebSockets are not enabled in the proxy |
+| The console says *Could not open the console connection* | WebSockets are not enabled in the proxy (NPM: **Websockets Support**) |
+| The console disconnects after about a minute without typing | The proxy closes idle WebSockets: set **Console keep-alive** to `25` |
 | Everyone gets locked out together after a few failed logins | `TRUST_PROXY` is not set, so all logins through the proxy share one counter. Set it |
 | Cannot sign in over `http://` anymore | `COOKIE_SECURE` is on: use `https://`, or turn it off |

@@ -26,6 +26,7 @@ const listOf = (value) =>
  *   allowedOrigins: string[] | null
  *   sessionSecret: string
  *   registryAuth: [{ registry, username, password }] | null
+ *   consoleKeepalive: number | null   (seconds, 0 = off)
  */
 function sanitize(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -44,6 +45,7 @@ function sanitize(raw) {
           .filter((e) => e && typeof e === 'object')
           .map((e) => ({ registry: String(e.registry ?? ''), username: String(e.username ?? ''), password: String(e.password ?? '') }))
       : null,
+    consoleKeepalive: Number.isInteger(r.consoleKeepalive) ? r.consoleKeepalive : null,
   };
 }
 
@@ -105,6 +107,24 @@ function envRegistryAuth() {
   return out;
 }
 
+// Console keep-alive: reverse proxies close idle WebSockets (nginx / Nginx Proxy Manager after
+// 60 s). A ping every N seconds keeps an idle console open. 0 = off.
+export const KEEPALIVE_RANGE = { min: 10, max: 300 };
+const validKeepalive = (n) => Number.isInteger(n) && (n === 0 || (n >= KEEPALIVE_RANGE.min && n <= KEEPALIVE_RANGE.max));
+
+function envKeepalive() {
+  const raw = env('CONSOLE_WS_KEEPALIVE');
+  if (!raw) return null;
+  const n = Number(raw);
+  if (validKeepalive(n)) return n;
+  console.warn(`CONSOLE_WS_KEEPALIVE=${raw} is not valid (0, or ${KEEPALIVE_RANGE.min} to ${KEEPALIVE_RANGE.max} seconds): ignored.`);
+  return null;
+}
+const ENV_KEEPALIVE = envKeepalive();
+
+/** Seconds between WebSocket pings on an open console (0 = off). */
+export const consoleKeepalive = () => cfg.consoleKeepalive ?? ENV_KEEPALIVE ?? 0;
+
 /** Registry credentials: the list saved in Settings replaces REGISTRY_AUTH. */
 export const registryAuth = () => cfg.registryAuth ?? envRegistryAuth();
 
@@ -125,6 +145,11 @@ export function publicConfig() {
       // Tokens never leave the server: the browser gets a mask and sends it back unchanged
       value: registryAuth().map((e) => ({ registry: e.registry, username: e.username, password: e.password ? MASK : '' })),
       source: cfg.registryAuth ? 'settings' : env('REGISTRY_AUTH') ? 'env' : 'default',
+    },
+    consoleKeepalive: {
+      value: consoleKeepalive(),
+      source: cfg.consoleKeepalive !== null ? 'settings' : ENV_KEEPALIVE !== null ? 'env' : 'default',
+      ...KEEPALIVE_RANGE,
     },
     // Only configurable in the environment: changing them needs the container to be recreated
     readOnly: {
@@ -199,6 +224,11 @@ export async function updateConfig(patch) {
     const v = String(patch.sessionSecret ?? '').trim();
     if (v.length < 32) throw bad('The session secret must be at least 32 characters');
     next.sessionSecret = v;
+  }
+  if ('consoleKeepalive' in patch) {
+    const n = Number(patch.consoleKeepalive);
+    if (!validKeepalive(n)) throw bad(`Console keep-alive: 0 (off) or ${KEEPALIVE_RANGE.min} to ${KEEPALIVE_RANGE.max} seconds`);
+    next.consoleKeepalive = n;
   }
   if ('registryAuth' in patch) {
     if (!Array.isArray(patch.registryAuth)) throw bad('Invalid registry credentials');

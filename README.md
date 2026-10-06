@@ -149,6 +149,7 @@ All settings are environment variables (see [`backend/.env.example`](backend/.en
 | `TRUST_PROXY` | | private networks | IP of your reverse proxy (trusted for `X-Forwarded-*`) |
 | `COOKIE_SECURE` | | `false` | `true` to always send the session cookie over HTTPS only |
 | `ALLOWED_ORIGINS` | | | Extra origins allowed to call the API (normally not needed) |
+| `CONSOLE_WS_KEEPALIVE` | | `0` (off) | Seconds between pings on an open console, so a reverse proxy does not close it when idle (`25` for Nginx Proxy Manager) |
 | `DOCKER_HOST` / `DOCKER_SOCKET` | | platform socket | Custom Docker connection |
 
 Changes to `.env` apply when the container is **recreated** (`docker rm -f` + `docker run`, or `docker compose up -d`), not on `docker restart`: Docker copies the variables into the container when it is created. Settings changed in the web UI apply right away. `PORT` and the Docker connection can only be changed in `.env`.

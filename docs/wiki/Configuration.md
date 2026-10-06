@@ -24,6 +24,7 @@ To check the value a running container got: `docker exec dockerupdates printenv 
 | [`TRUST_PROXY`](#trust_proxy) | | private networks | Settings > Server & access |
 | [`COOKIE_SECURE`](#cookie_secure) | | `false` | Settings > Server & access |
 | [`ALLOWED_ORIGINS`](#allowed_origins) | | | Settings > Server & access |
+| [`CONSOLE_WS_KEEPALIVE`](#console_ws_keepalive) | | `0` (off) | Settings > Server & access |
 | [`REGISTRY_AUTH`](#registry_auth) | | | Settings > Registry credentials |
 | [`PORT`](#port) | | `3000` | Read-only |
 | [`DOCKER_HOST` / `DOCKER_SOCKET`](#docker_host--docker_socket) | | platform socket | Read-only |
@@ -196,6 +197,18 @@ ALLOWED_ORIGINS=https://docker.example.com
 ```
 
 Comma separated, scheme and host only (no path).
+
+### `CONSOLE_WS_KEEPALIVE`
+
+Default `0` (off). The container console uses a WebSocket, and reverse proxies close one that carries no traffic for a while: Nginx Proxy Manager (nginx) after **60 seconds**. A console left idle is then cut and you have to click *Reconnect*.
+
+With a value, DockerUpdates sends a ping every that many seconds (10 to 300) while a console is open. Pings count as traffic, so the proxy keeps the console open. Use a value below the proxy timeout:
+
+```env
+CONSOLE_WS_KEEPALIVE=25
+```
+
+Not needed without a reverse proxy. Applies to consoles opened after the change. Also in **Settings > Server & access** (*Console keep-alive*).
 
 ---
 

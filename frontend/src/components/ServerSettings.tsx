@@ -268,6 +268,8 @@ interface AccessDraft {
   trustValue: string
   cookieSecure: boolean
   origins: string
+  /** Seconds, as typed */
+  keepalive: string
   /** '' = keep the current secret */
   secret: string
 }
@@ -281,6 +283,7 @@ function draftFrom(c: ServerConfig): AccessDraft {
     trustValue: c.trustProxy.value,
     cookieSecure: c.cookieSecure.value,
     origins: c.allowedOrigins.value.join(', '),
+    keepalive: String(c.consoleKeepalive.value),
     secret: '',
   }
 }
@@ -308,6 +311,7 @@ function ServerAccessCard({ config, onConfig, toast, onError }: CardProps & Pick
   if (draft.origins.trim() !== initial.origins) {
     patch.allowedOrigins = draft.origins.split(',').map((o) => o.trim()).filter(Boolean)
   }
+  if (draft.keepalive.trim() !== initial.keepalive) patch.consoleKeepalive = Number(draft.keepalive)
   if (editingSecret && draft.secret) patch.sessionSecret = draft.secret
   const dirty = Object.keys(patch).length > 0
 
@@ -328,6 +332,9 @@ function ServerAccessCard({ config, onConfig, toast, onError }: CardProps & Pick
   const envIpIgnored = config.hostIp.source === 'env' && config.hostIp.value && config.hostIp.value !== host.ip
   const ipWrong = host.ipIsLocal === false && draft.hostIp.trim() === host.ip
   const secretTooShort = editingSecret && draft.secret.length > 0 && draft.secret.length < 32
+  const ka = config.consoleKeepalive
+  const kaValue = Number(draft.keepalive)
+  const keepaliveInvalid = draft.keepalive.trim() === '' || !Number.isInteger(kaValue) || (kaValue !== 0 && (kaValue < ka.min || kaValue > ka.max))
   const trustOn = draft.trustEnabled
 
   return (
@@ -346,7 +353,7 @@ function ServerAccessCard({ config, onConfig, toast, onError }: CardProps & Pick
               variant="primary"
               icon={<Save size={12} />}
               loading={saving}
-              disabled={secretTooShort}
+              disabled={secretTooShort || keepaliveInvalid}
               onClick={() => void save(patch, 'Server settings saved')}
             >
               Save
@@ -473,6 +480,34 @@ function ServerAccessCard({ config, onConfig, toast, onError }: CardProps & Pick
       >
         <input className={`${monoCls} w-full sm:w-72`} placeholder="https://docker.example.com" value={draft.origins} onChange={(e) => set({ origins: e.target.value })} />
       </SettingRow>
+
+      {/* Console keep-alive */}
+      <div>
+        <SettingRow
+          label={
+            <>
+              Console keep-alive (CONSOLE_WS_KEEPALIVE)
+              <SourceBadge source={ka.source} />
+            </>
+          }
+          description="Reverse proxies close a console left idle (Nginx Proxy Manager after 60 s). A ping every this many seconds keeps it open. 0 = off; 25 works for Nginx Proxy Manager."
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={ka.max}
+              className={`${selectCls} w-24 ${keepaliveInvalid ? '!border-amber-500' : ''}`}
+              value={draft.keepalive}
+              onChange={(e) => set({ keepalive: e.target.value })}
+            />
+            <span className="w-16 text-xs text-muted">seconds</span>
+          </div>
+        </SettingRow>
+        {keepaliveInvalid && <Note tone="warn">Use 0 (off) or {ka.min} to {ka.max} seconds.</Note>}
+        {!keepaliveInvalid && kaValue === 0 && <Note>Off: an idle console may be closed by your reverse proxy. Applies to consoles opened after saving.</Note>}
+        {!keepaliveInvalid && kaValue > 0 && <Note>Applies to consoles opened after saving.</Note>}
+      </div>
 
       {/* Session secret */}
       <div>
