@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import { getSettings } from './settings.js';
 
 const TIMEOUT_MS = 10_000;
-const AVATAR = 'https://raw.githubusercontent.com/PixlGalaxy/DockerUpdates/main/frontend/public/docker.png';
+// Bot avatar and footer icon of the Discord messages: the logo centered on a white square
+const AVATAR = 'https://raw.githubusercontent.com/PixlGalaxy/DockerUpdates/main/docs/assets/webhook-avatar.png';
 
 // event -> look & wording
 const EVENTS = {
