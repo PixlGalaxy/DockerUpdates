@@ -68,7 +68,8 @@ async function sendDiscord(cfg, event, p) {
   const meta = EVENTS[event];
   const items = p.items ?? [];
   const embed = {
-    title: `${meta.emoji}  ${meta.title}`,
+    // The test message has no emoji in Discord (no whale): the avatar already shows the logo
+    title: event === 'test' ? meta.title : `${meta.emoji}  ${meta.title}`,
     description: summaryText(event, p),
     color: meta.color,
     fields: items.slice(0, 24).map((item) => ({
