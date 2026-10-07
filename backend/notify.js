@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import { getSettings } from './settings.js';
 
 const TIMEOUT_MS = 10_000;
-const AVATAR = 'https://raw.githubusercontent.com/PixlGalaxy/DockerUpdates/main/frontend/public/docker.png';
+// Bot avatar and footer icon of the Discord messages: the logo centered on a white square
+const AVATAR = 'https://raw.githubusercontent.com/PixlGalaxy/DockerUpdates/main/docs/assets/webhook-avatar.png';
 
 // event -> look & wording
 const EVENTS = {
@@ -67,7 +68,8 @@ async function sendDiscord(cfg, event, p) {
   const meta = EVENTS[event];
   const items = p.items ?? [];
   const embed = {
-    title: `${meta.emoji}  ${meta.title}`,
+    // The test message has no emoji in Discord (no whale): the avatar already shows the logo
+    title: event === 'test' ? meta.title : `${meta.emoji}  ${meta.title}`,
     description: summaryText(event, p),
     color: meta.color,
     fields: items.slice(0, 24).map((item) => ({
