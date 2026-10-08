@@ -505,7 +505,7 @@ function UpdateInfo({
         )}
         <IconButton
           label="Check for update"
-          className="size-6"
+          className="h-auto! w-[22px]! self-stretch rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300"
           disabled={busy || c.updateStatus === 'local'}
           onClick={onCheckUpdate}
         >

@@ -17,7 +17,7 @@ export default function StatsCards({ total, running, stopped, updates, filter, o
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Card id="all" label="Total containers" value={total} icon={<Boxes size={18} />} tone="text-sky-500 bg-sky-500/10" active={filter} onClick={onFilter} />
       <Card id="running" label="Running" value={running} icon={<CirclePlay size={18} />} tone="text-emerald-500 bg-emerald-500/10" active={filter} onClick={onFilter} />
-      <Card id="stopped" label="Stopped / paused" value={stopped} icon={<CirclePause size={18} />} tone="text-zinc-500 bg-zinc-500/10" active={filter} onClick={onFilter} />
+      <Card id="stopped" label="Stopped / paused" value={stopped} icon={<CirclePause size={18} />} tone="text-red-500 bg-red-500/10" active={filter} onClick={onFilter} />
       <Card
         id="updates"
         label="Updates available"
