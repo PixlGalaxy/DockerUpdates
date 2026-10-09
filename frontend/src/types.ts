@@ -157,6 +157,8 @@ export interface ContainerSpec {
   iconUrl: string
   /** Memory limit in bytes (0 = no limit) */
   memory: number
+  /** CPU pinning, --cpuset-cpus format ("0-3,8"; '' = every CPU) */
+  cpuset: string
   /** Fixed IPv4 on a user-defined network ('' = automatic) */
   ip: string
 }
@@ -193,6 +195,21 @@ export interface NetworkInfo {
   gateway: string | null
   /** User-defined network: a fixed IP can be set */
   fixedIp: boolean
+}
+
+/** CPUs of the Docker host for the CPU pinning picker */
+export interface CpuLayout {
+  /** CPUs Docker can use */
+  cpus: number
+  /** Physical cores, each with its CPU ids: first = the core, next ones = its hyper-threads */
+  cores: number[][]
+  sockets: number
+  threadsPerCore: number
+  /** 'topology': real core / thread pairs; 'count': only the number of CPUs is known */
+  source: 'topology' | 'count'
+  model: string
+  /** Docker runs in a virtual machine: these are vCPUs */
+  virtual: boolean
 }
 
 export interface HostInfo {

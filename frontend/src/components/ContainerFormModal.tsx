@@ -2,6 +2,7 @@ import {
   CircleAlert,
   CircleCheck,
   CircleX,
+  Cpu,
   Network,
   FileDown,
   FileUp,
@@ -14,9 +15,17 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { api } from '../api'
-import type { ContainerSpec, NetworkInfo, TemplateSummary } from '../types'
+import type { ContainerSpec, CpuLayout, NetworkInfo, TemplateSummary } from '../types'
 import { formatBytes } from '../utils'
 import Logo from './Logo'
 import { Button, IconButton, Toggle } from './ui'
@@ -52,6 +61,7 @@ function toSpec(data: unknown): ContainerSpec {
     extraParams: typeof d.extraParams === 'string' ? d.extraParams : '',
     iconUrl: typeof d.iconUrl === 'string' ? d.iconUrl : '',
     memory: Number(d.memory) > 0 ? Number(d.memory) : 0,
+    cpuset: typeof d.cpuset === 'string' && /^[\d,-]*$/.test(d.cpuset) ? d.cpuset : '',
     ip: typeof d.ip === 'string' ? d.ip : '',
   }
 }
@@ -67,6 +77,7 @@ const EMPTY: ContainerSpec = {
   extraParams: '',
   iconUrl: '',
   memory: 0,
+  cpuset: '',
   ip: '',
 }
 
@@ -80,6 +91,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const [networks, setNetworks] = useState<NetworkInfo[]>([])
+  const [cpuLayout, setCpuLayout] = useState<CpuLayout | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [extraCheck, setExtraCheck] = useState<ExtraCheck>({ state: 'idle' })
@@ -92,6 +104,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
 
   useEffect(() => {
     api.networks().then(setNetworks, () => setNetworks([]))
+    api.hostCpus().then(setCpuLayout, () => setCpuLayout(null))
     if (mode === 'add') api.templates().then(setTemplates, () => setTemplates([]))
   }, [mode])
 
@@ -349,6 +362,12 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
               </label>
             </div>
             <MemoryField value={form.memory} max={hostMemTotal} onChange={(memory) => patch({ memory })} />
+            <CpuPinningField
+              value={form.cpuset}
+              layout={cpuLayout}
+              overridden={/(^|\s)--cpuset-cpus\b/.test(form.extraParams)}
+              onChange={(cpuset) => patch({ cpuset })}
+            />
             <Field label="Icon URL" hint="png, jpg, webp, gif, svg or ico — empty = website favicon" className="sm:col-span-2">
               <div className="relative">
                 <ImageIcon size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
@@ -666,6 +685,237 @@ function MemoryField({ value, max, onChange }: { value: number; max: number; onC
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/** "0-3,8" -> Set {0, 1, 2, 3, 8} */
+function parseCpuset(value: string) {
+  const ids = new Set<number>()
+  for (const part of value.split(',')) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part.trim())
+    if (!m) continue
+    const from = Number(m[1])
+    const to = m[2] === undefined ? from : Number(m[2])
+    for (let i = from; i <= to && i - from < 4096; i++) ids.add(i)
+  }
+  return ids
+}
+
+/** Set {0, 1, 2, 3, 8} -> "0-3,8" */
+function formatCpuset(ids: Iterable<number>) {
+  const sorted = [...ids].sort((a, b) => a - b)
+  const parts: string[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    let j = i
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++
+    parts.push(j > i ? `${sorted[i]}-${sorted[j]}` : String(sorted[i]))
+    i = j
+  }
+  return parts.join(',')
+}
+
+/** Width of one core column of the picker (circle + CPU number), and of the row labels */
+const CORE_COL_PX = 52
+const LABEL_COL_PX = 32
+
+/**
+ * CPU pinning (--cpuset-cpus), laid out like Unraid: one column per physical core, the core
+ * on the "CPU" row and its hyper-thread(s) on the "HT" row. Nothing selected = every CPU.
+ */
+function CpuPinningField({
+  value,
+  layout,
+  overridden,
+  onChange,
+}: {
+  value: string
+  layout: CpuLayout | null
+  overridden: boolean
+  onChange: (cpuset: string) => void
+}) {
+  const selected = parseCpuset(value)
+  const toggle = (id: number) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onChange(formatCpuset(next))
+  }
+  const gridRef = useRef<HTMLDivElement>(null)
+  // Cores per row: as many as fit the width (wraps on big CPUs, stays readable on a phone)
+  const [perRow, setPerRow] = useState(8)
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    const fit = () => setPerRow(Math.max(3, Math.min(16, Math.floor((grid.clientWidth - LABEL_COL_PX) / CORE_COL_PX))))
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(grid)
+    return () => ro.disconnect()
+  }, [layout])
+  // Box drawn while dragging (relative to the grid)
+  const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
+
+  /**
+   * Press on a CPU and drag: every CPU inside the box between the starting CPU and the pointer
+   * gets the new state of the first one (select, or unselect when it started on a selected
+   * one), like selecting several photos at once. A plain click just toggles that CPU.
+   */
+  function startSelect(e: ReactPointerEvent<HTMLButtonElement>, id: number) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const grid = gridRef.current
+    if (!grid) return
+    const base = new Set(selected)
+    const select = !base.has(id)
+    const r0 = e.currentTarget.getBoundingClientRect()
+    const sx = r0.left + r0.width / 2
+    const sy = r0.top + r0.height / 2
+    const buttons = [...grid.querySelectorAll<HTMLElement>('[data-cpu]')].map((el) => ({
+      id: Number(el.dataset.cpu),
+      rect: el.getBoundingClientRect(),
+    }))
+    let last = ''
+    const apply = (px: number, py: number) => {
+      const left = Math.min(sx, px)
+      const right = Math.max(sx, px)
+      const top = Math.min(sy, py)
+      const bottom = Math.max(sy, py)
+      const next = new Set(base)
+      for (const b of buttons) {
+        // A CPU is in when the box touches its circle + number
+        const inside = b.rect.right >= left && b.rect.left <= right && b.rect.bottom >= top && b.rect.top <= bottom
+        if (!inside) continue
+        if (select) next.add(b.id)
+        else next.delete(b.id)
+      }
+      const value = formatCpuset(next)
+      if (value !== last) onChange(value)
+      last = value
+      const g = grid.getBoundingClientRect()
+      setBox({ left: left - g.left, top: top - g.top, width: right - left, height: bottom - top })
+    }
+    apply(sx, sy)
+    const move = (ev: PointerEvent) => apply(ev.clientX, ev.clientY)
+    const end = () => {
+      setBox(null)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+  const cores = layout?.cores ?? []
+  const rows: number[][][] = []
+  for (let i = 0; i < cores.length; i += perRow) rows.push(cores.slice(i, i + perRow))
+  const threads = layout?.threadsPerCore ?? 1
+  const known = layout?.source === 'topology'
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const summary = layout
+    ? known
+      ? `${plural(layout.cores.length, 'core')} / ${plural(layout.cpus, 'thread')}`
+      : plural(layout.cpus, 'CPU')
+    : ''
+
+  return (
+    <div className="sm:col-span-2">
+      <span className="mb-1.5 flex items-baseline justify-between gap-3 text-xs font-medium">
+        <span className="inline-flex shrink-0 items-center gap-1.5">
+          <Cpu size={13} className="text-muted" /> CPU pinning
+        </span>
+        <span className="truncate font-normal text-muted" title={layout?.model}>
+          {[layout?.model, summary].filter(Boolean).join(' · ')}
+        </span>
+      </span>
+      <div className="rounded-lg border border-line bg-surface px-3 py-2.5 shadow-xs">
+        {!layout ? (
+          <p className="flex items-center gap-2 py-1 text-xs text-muted">
+            <LoaderCircle size={13} className="animate-spin" /> Reading the CPUs of the Docker host…
+          </p>
+        ) : (
+          <div ref={gridRef} className="relative space-y-3 select-none">
+            {box && (box.width > 4 || box.height > 4) && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute z-10 rounded-md border border-orange-500/70 bg-orange-500/10"
+                style={box}
+              />
+            )}
+            {rows.map((row, r) => (
+              <div
+                key={r}
+                className="grid items-center gap-x-1 gap-y-1.5"
+                style={{ gridTemplateColumns: `${LABEL_COL_PX}px repeat(${perRow}, minmax(0, 1fr))` }}
+              >
+                {Array.from({ length: threads }, (_, t) => (
+                  <Fragment key={t}>
+                    <span className="text-[11px] font-medium text-muted">
+                      {t === 0 ? 'CPU' : threads > 2 ? `HT${t}` : 'HT'}
+                    </span>
+                    {row.map((ids) => {
+                      const id = ids[t]
+                      if (id === undefined) return <span key={`${ids[0]}-${t}`} />
+                      const on = selected.has(id)
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={on}
+                          aria-label={`CPU ${id}${t > 0 ? ' (hyper-thread)' : ''}`}
+                          data-cpu={id}
+                          onPointerDown={(e) => startSelect(e, id)}
+                          // Pointer clicks are handled on press (and drag); this is the keyboard
+                          onClick={(e) => e.detail === 0 && toggle(id)}
+                          className="group/cpu inline-flex min-w-0 touch-none items-center gap-1.5 rounded-md py-0.5 pr-1 text-xs tabular-nums hover:bg-surface-2"
+                        >
+                          <span
+                            className={`size-4 shrink-0 rounded-full transition-colors ${
+                              on ? 'bg-orange-500 shadow-sm shadow-orange-500/40' : 'bg-line group-hover/cpu:bg-muted/40'
+                            }`}
+                          />
+                          {id}
+                        </button>
+                      )
+                    })}
+                    {Array.from({ length: perRow - row.length }, (_, i) => (
+                      <span key={`pad-${i}`} />
+                    ))}
+                  </Fragment>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <button type="button" onClick={() => onChange('')} className={presetCls(selected.size === 0)}>
+            No pinning
+          </button>
+          <span className="ml-auto text-[11px] text-muted">
+            {selected.size === 0 ? 'Can use every CPU' : `Pinned to ${plural(selected.size, 'CPU')}: ${value}`}
+          </span>
+        </div>
+        {layout && (
+          <p className="mt-1.5 text-[11px] text-muted">
+            {known && threads > 1 && 'A core and its HT share the same physical core: pick them together. '}
+            Press and drag to select several.
+          </p>
+        )}
+        {layout && (layout.virtual || !known) && (
+          <p className="mt-2 border-t border-line pt-2 text-[11px] leading-relaxed text-muted">
+            {!known && 'The thread layout of the Docker host is not available here, so every CPU is listed on its own. '}
+            {layout.virtual &&
+              'Docker runs in a virtual machine: these are its virtual CPUs, grouped the way the hypervisor declares them. Pinning picks vCPUs, not fixed physical cores.'}
+          </p>
+        )}
+        {overridden && (
+          <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+            <TriangleAlert size={12} /> --cpuset-cpus in Extra parameters overrides this selection.
+          </p>
+        )}
       </div>
     </div>
   )

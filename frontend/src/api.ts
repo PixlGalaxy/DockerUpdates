@@ -6,6 +6,7 @@ import type {
   ContainerAction,
   ContainersResponse,
   ContainerSpec,
+  CpuLayout,
   AutoUpdateStatus,
   CleanupPreview,
   CleanupResult,
@@ -114,6 +115,7 @@ export const api = {
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
   host: () => request<HostInfo>('/api/host'),
   hostUsage: () => request<HostUsage>('/api/host/usage'),
+  hostCpus: () => request<CpuLayout>('/api/host/cpus'),
 
   history: (container?: string) =>
     request<HistoryEntry[]>(`/api/history${container ? `?container=${encodeURIComponent(container)}` : ''}`),

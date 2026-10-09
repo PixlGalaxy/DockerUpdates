@@ -27,6 +27,7 @@ export function effectiveVolumes(volumes = []) {
 
 const normalizePath = (p) => String(p).replace(/\/+$/, '') || '/';
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+const CPUSET_RE = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
 
 /** Spec of an existing container. `config` is the container config minus image defaults. */
 export function specFromInspect(inspect, config, { logDriver } = {}) {
@@ -70,9 +71,11 @@ export function specFromInspect(inspect, config, { logDriver } = {}) {
     ports,
     volumes,
     env,
-    // Memory limit has its own slider in the form, so it is not repeated in Extra parameters
+    // Memory limit and CPU pinning have their own fields in the form, so they are not repeated
+    // in Extra parameters
     memory: host.Memory || 0,
-    extraParams: serializeExtraParams(config, host, { logDriver, skipMemory: true }),
+    cpuset: host.CpusetCpus || '',
+    extraParams: serializeExtraParams(config, host, { logDriver, skipMemory: true, skipCpuset: true }),
   };
 }
 
@@ -115,6 +118,7 @@ export function validateSpec(spec) {
     throw bad('Invalid memory limit');
   }
   if (Number(spec.memory) > 0 && Number(spec.memory) < 6 * 1024 ** 2) throw bad('Memory limit must be at least 6 MB');
+  if (spec.cpuset && !CPUSET_RE.test(String(spec.cpuset))) throw bad(`Invalid CPU pinning "${spec.cpuset}" (e.g. 0-3 or 0,2)`);
   for (const e of spec.env ?? []) {
     if (e.key && !/^[^=\s]+$/.test(e.key)) throw bad(`Invalid environment variable name "${e.key}"`);
   }
@@ -157,6 +161,8 @@ export function buildCreateOptions(spec, base = null) {
   const host = { ...(base?.hostConfig ?? {}), ...extra.host };
   // --memory in Extra parameters wins over the slider
   if (!host.Memory && Number(spec.memory) > 0) host.Memory = Math.round(Number(spec.memory));
+  // Same for --cpuset-cpus and the CPU pinning picker
+  if (!host.CpusetCpus && spec.cpuset) host.CpusetCpus = String(spec.cpuset);
   host.PortBindings = bindings;
   host.Binds = effectiveVolumes(spec.volumes).map((v) => `${v.host}:${v.container}${v.mode === 'ro' ? ':ro' : ''}`);
   // All bind/volume mounts are now in Binds; keep only tmpfs mounts from --mount

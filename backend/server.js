@@ -19,6 +19,7 @@ import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import { startOperation, streamOperation } from './operations.js';
 import { getOrder, saveOrder } from './order.js';
+import { cpuLayout, detectCpuLayout } from './cpuLayout.js';
 import * as scheduler from './scheduler.js';
 import { onConfigChange, publicConfig, trustProxySetting as currentTrustProxy, updateConfig } from './runtimeConfig.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
@@ -96,6 +97,8 @@ app.post('/api/containers', handle(async (req) => ({ id: await dk.createContaine
 app.get('/api/stats', handle(() => dk.getStats()));
 app.get('/api/host', handle(() => dk.hostInfo()));
 app.get('/api/host/usage', handle(() => hostUsage()));
+// CPUs of the Docker host and their hyper-thread pairs (CPU pinning picker)
+app.get('/api/host/cpus', handle(() => cpuLayout()));
 app.get('/api/networks', handle(() => dk.listNetworks()));
 app.get('/api/lan-network', handle(() => lanStatus()));
 app.post('/api/lan-network/detect', handle(() => detectLan()));
@@ -271,6 +274,7 @@ await Promise.all([initIcons(), loadSettings()]);
 await scheduler.startScheduler();
 startHealthMonitor();
 startHostAddressDetection();
+void detectCpuLayout();
 
 const server = http.createServer(app);
 attachConsole(server, {
