@@ -9,6 +9,7 @@ import { validateFixedIp } from './ipCheck.js';
 import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
 import { silent } from './operations.js';
+import { renameInOrder } from './order.js';
 import { dockerRunCommand, humanSize } from './runCommand.js';
 import { hostIpOverride, hostIpSource, hostNameOverride } from './runtimeConfig.js';
 import { getSettings } from './settings.js';
@@ -842,7 +843,10 @@ export async function editContainer(id, spec) {
   const oldName = cleanName(current.Name);
   const name = await recreateContainer(id, (base) => buildCreateOptions(next, base));
   updateStatus.delete(oldName);
-  if (name !== oldName) await renameInHistory(oldName, name);
+  if (name !== oldName) {
+    await renameInHistory(oldName, name);
+    await renameInOrder(oldName, name).catch((e) => console.error('Could not update the container order:', e.message));
+  }
   await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
   checkUpdateSoon(name);
   return { name };

@@ -18,6 +18,7 @@ import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import { startOperation, streamOperation } from './operations.js';
+import { getOrder, saveOrder } from './order.js';
 import * as scheduler from './scheduler.js';
 import { onConfigChange, publicConfig, trustProxySetting as currentTrustProxy, updateConfig } from './runtimeConfig.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
@@ -86,7 +87,10 @@ app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
   hostName: await dk.hostName(),
   containers: await dk.listContainers(),
+  order: await getOrder(),
 })));
+// Custom order of the list (lock button): body { names: string[] }
+app.put('/api/containers/order', handle(async (req) => ({ order: await saveOrder(req.body?.names) })));
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));
 // Live CPU / memory, polled every second by the UI
 app.get('/api/stats', handle(() => dk.getStats()));

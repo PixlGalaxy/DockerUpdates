@@ -78,6 +78,8 @@ export const api = {
   logout: () => post<Ok>('/api/auth/logout'),
 
   list: () => request<ContainersResponse>('/api/containers'),
+  saveOrder: (names: string[]) =>
+    request<{ order: string[] }>('/api/containers/order', { method: 'PUT', body: JSON.stringify({ names }) }),
   stats: () => request<Record<string, ContainerStats>>('/api/stats'),
   action: (id: string, action: ContainerAction) =>
     post<Ok>(`/api/containers/${id}/${action}`),

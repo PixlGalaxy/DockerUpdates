@@ -76,6 +76,10 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  // Custom order saved on the server, and the order being edited while the lock is open
+  const [order, setOrder] = useState<string[]>([])
+  const [draftOrder, setDraftOrder] = useState<string[] | null>(null)
+  const [savingOrder, setSavingOrder] = useState(false)
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
   // Containers whose update check is running (spins their check button)
   const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set())
@@ -102,6 +106,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
     try {
       const data = await api.list()
       setContainers(data.containers)
+      setOrder(data.order ?? [])
       setHostIp(data.hostIp)
       onHost(data.hostIp, data.hostName)
       setLastUpdated(new Date())
@@ -304,8 +309,10 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   }, [containers])
 
   const visible = useMemo(() => {
+    // Reordering: every container, in the order being edited
+    if (draftOrder) return sortByOrder(containers, draftOrder)
     const q = search.trim().toLowerCase()
-    return containers
+    const shown = containers
       .filter((c) => {
         if (filter === 'running') return c.state === 'running'
         if (filter === 'stopped') return c.state !== 'running'
@@ -313,8 +320,50 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         return true
       })
       .filter((c) => !q || [c.name, c.image, c.ip ?? '', c.network].some((v) => v.toLowerCase().includes(q)))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [containers, filter, search])
+    return sortByOrder(shown, order)
+  }, [containers, filter, search, order, draftOrder])
+
+  /** Lock button: open = start reordering every container; closed again = save the order */
+  async function toggleOrder() {
+    if (!draftOrder) {
+      setSearch('')
+      setFilter('all')
+      setDraftOrder(sortByOrder(containers, order).map((c) => c.name))
+      return
+    }
+    const names = sortByOrder(containers, draftOrder).map((c) => c.name)
+    const saved = sortByOrder(containers, order)
+    if (names.every((n, i) => n === saved[i].name)) {
+      setDraftOrder(null)
+      return
+    }
+    setSavingOrder(true)
+    try {
+      setOrder((await api.saveOrder(names)).order)
+      setDraftOrder(null)
+      toast('success', 'Container order saved')
+    } catch (err) {
+      onError(err) // stays unlocked: the order can be saved again
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  /** Moves `name` to the place of `over` in the order being edited */
+  const reorder = useCallback(
+    (name: string, over: string) =>
+      setDraftOrder((d) => {
+        if (!d) return d
+        const names = sortByOrder(containers, d).map((c) => c.name)
+        const from = names.indexOf(name)
+        const to = names.indexOf(over)
+        if (from === -1 || to === -1) return d
+        names.splice(from, 1)
+        names.splice(to, 0, name)
+        return names
+      }),
+    [containers],
+  )
 
   // The server checks a created / edited container for updates 3 s after it starts:
   // refresh once more so its status replaces "Not checked" without waiting for the poll
@@ -337,6 +386,9 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         lastUpdated={lastUpdated}
         refreshing={refreshing}
         onRefresh={refresh}
+        orderUnlocked={draftOrder !== null}
+        orderSaving={savingOrder}
+        onToggleOrder={() => void toggleOrder()}
       />
 
       <ContainerTable
@@ -354,6 +406,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         onCheckUpdate={(id) => void checkUpdate(id)}
         onUpdate={(id) => void startUpdate([id])}
         onCopy={copy}
+        onReorder={draftOrder ? reorder : undefined}
       />
 
       <ActionBar
@@ -457,5 +510,13 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         />
       )}
     </>
+  )
+}
+
+/** Containers in the saved order; the ones not in it (new) go after, alphabetically. */
+function sortByOrder(list: ContainerInfo[], order: string[]) {
+  const rank = new Map(order.map((name, i) => [name, i]))
+  return [...list].sort(
+    (a, b) => (rank.get(a.name) ?? Infinity) - (rank.get(b.name) ?? Infinity) || a.name.localeCompare(b.name),
   )
 }

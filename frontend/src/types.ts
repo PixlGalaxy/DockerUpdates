@@ -126,6 +126,8 @@ export interface ContainersResponse {
   /** Hostname of the Docker host */
   hostName: string
   containers: ContainerInfo[]
+  /** Custom order of the list (container names, first shown first); others go after, A-Z */
+  order: string[]
 }
 
 export type ContainerAction =

@@ -32,6 +32,10 @@ interface Props {
   onCheckUpdate: () => void
   onUpdate: () => void
   onCopy: (text: string) => void
+  /** Drag handle shown while the order is unlocked */
+  grip?: ReactNode
+  /** This container is being dragged */
+  dragging?: boolean
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -106,6 +110,8 @@ export default function ContainerRow({
   onCheckUpdate,
   onUpdate,
   onCopy,
+  grip,
+  dragging,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -119,17 +125,19 @@ export default function ContainerRow({
 
   return (
     <tr
+      data-order-id={c.name}
       onContextMenu={(e) => {
         // Keep the native menu on links and text fields
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''}`}
+      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
     >
       {/* Application */}
       <td className={td}>
         <div className="flex items-center gap-3">
+          {grip}
           <AppIcon container={c} onClick={openMenuHere} />
           <div className="max-w-60 min-w-0">
             <div className="flex items-center gap-2">
@@ -257,6 +265,8 @@ export function ContainerCard({
   onCheckUpdate,
   onUpdate,
   onCopy,
+  grip,
+  dragging,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -271,14 +281,16 @@ export function ContainerCard({
 
   return (
     <article
+      data-order-id={c.name}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${busy ? 'opacity-70' : ''}`}
+      className={`group overflow-hidden rounded-2xl border bg-surface shadow-sm ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 bg-rose-500/5 shadow-none [&>*]:opacity-30' : 'border-line'}`}
     >
       <div className="flex items-start gap-3 p-4 pb-3">
+        {grip}
         <AppIcon container={c} onClick={openMenuHere} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
