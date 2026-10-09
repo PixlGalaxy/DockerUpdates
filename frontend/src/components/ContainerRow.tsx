@@ -24,6 +24,8 @@ interface Props {
   hostIp: string
   advanced: boolean
   busy: boolean
+  /** The update check of this container is running */
+  checking?: boolean
   /** Opens the container menu at the given screen position */
   onMenu: (x: number, y: number) => void
   onAutostart: (enabled: boolean) => void
@@ -98,6 +100,7 @@ export default function ContainerRow({
   hostIp,
   advanced,
   busy,
+  checking,
   onMenu,
   onAutostart,
   onCheckUpdate,
@@ -154,7 +157,7 @@ export default function ContainerRow({
 
       {/* Version */}
       <td className={td}>
-        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} />
+        <UpdateInfo container={c} busy={busy} checking={checking} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} />
       </td>
 
       {advanced && (
@@ -248,6 +251,7 @@ export function ContainerCard({
   hostIp,
   advanced,
   busy,
+  checking,
   onMenu,
   onAutostart,
   onCheckUpdate,
@@ -303,7 +307,7 @@ export function ContainerCard({
       </div>
 
       <div className="space-y-3 px-4 pb-4">
-        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} inline />
+        <UpdateInfo container={c} busy={busy} checking={checking} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} inline />
 
         {(hostNet || c.ports.length > 0) && (
           <CardField label="Ports">
@@ -441,12 +445,15 @@ function StateLabel({ container: c }: { container: ContainerInfo }) {
 function UpdateInfo({
   container: c,
   busy,
+  checking,
   onUpdate,
   onCheckUpdate,
   inline,
 }: {
   container: ContainerInfo
   busy: boolean
+  /** The update check of this container is running */
+  checking?: boolean
   onUpdate: () => void
   onCheckUpdate: () => void
   /** Badge and tag side by side (mobile card) instead of stacked */
@@ -504,12 +511,13 @@ function UpdateInfo({
           <Chip>{tag}</Chip>
         )}
         <IconButton
-          label="Check for update"
-          className="h-auto! w-[22px]! self-stretch rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300"
-          disabled={busy || c.updateStatus === 'local'}
+          label={checking ? 'Checking for update…' : 'Check for update'}
+          // Still disabled while checking, but fully visible so the spin reads as progress
+          className={`h-auto! w-[22px]! self-stretch rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300 ${checking ? 'disabled:opacity-100' : ''}`}
+          disabled={busy || checking || c.updateStatus === 'local'}
           onClick={onCheckUpdate}
         >
-          <RefreshCw size={12} />
+          <RefreshCw size={12} className={checking ? 'animate-spin' : undefined} />
         </IconButton>
       </div>
     </div>

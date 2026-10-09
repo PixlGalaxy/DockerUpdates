@@ -8,6 +8,7 @@ interface Props {
   advanced: boolean
   loading: boolean
   busyIds: Set<string>
+  checkingIds: Set<string>
   emptyMessage: string
   onMenu: (container: ContainerInfo, x: number, y: number) => void
   onAutostart: (id: string, enabled: boolean) => void
@@ -22,6 +23,7 @@ export default function ContainerTable({
   advanced,
   loading,
   busyIds,
+  checkingIds,
   emptyMessage,
   ...handlers
 }: Props) {
@@ -62,6 +64,7 @@ export default function ContainerTable({
               hostIp={hostIp}
               advanced={advanced}
               busy={busyIds.has(c.id)}
+              checking={checkingIds.has(c.id)}
               onMenu={(x, y) => handlers.onMenu(c, x, y)}
               onAutostart={(e) => handlers.onAutostart(c.id, e)}
               onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
@@ -118,6 +121,7 @@ export default function ContainerTable({
                     hostIp={hostIp}
                     advanced={advanced}
                     busy={busyIds.has(c.id)}
+                    checking={checkingIds.has(c.id)}
                     onMenu={(x, y) => handlers.onMenu(c, x, y)}
                     onAutostart={(e) => handlers.onAutostart(c.id, e)}
                     onCheckUpdate={() => handlers.onCheckUpdate(c.id)}

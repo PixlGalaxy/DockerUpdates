@@ -76,6 +76,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
+  // Containers whose update check is running (spins their check button)
+  const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set())
   const [globalBusy, setGlobalBusy] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -169,6 +171,23 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
     }
   }
 
+  // "Check for updates" checks every container: spin all their check buttons meanwhile
+  const spinningIds =
+    globalBusy === 'check' ? new Set(containers.filter((c) => c.updateStatus !== 'local').map((c) => c.id)) : checkingIds
+
+  async function checkUpdate(id: string) {
+    setCheckingIds((s) => new Set(s).add(id))
+    try {
+      await withBusy(id, () => api.checkUpdate(id), reportCheck)
+    } finally {
+      setCheckingIds((s) => {
+        const next = new Set(s)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
   async function withGlobal<T>(key: string, fn: () => Promise<T>, report: (r: T) => void) {
     setGlobalBusy(key)
     try {
@@ -244,7 +263,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Resume', icon: <Play size={15} />, hidden: c.state !== 'paused', onSelect: act('unpause') },
       { label: 'Restart', icon: <RotateCw size={15} />, hidden: !isActive(c), separatorBefore: c.isSelf, onSelect: act('restart') },
       { label: 'Edit', icon: <Pencil size={15} />, hidden: c.isSelf, separatorBefore: true, onSelect: () => void openEditor(c.id) },
-      { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => withBusy(c.id, () => api.checkUpdate(c.id), reportCheck) },
+      { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => void checkUpdate(c.id) },
       { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => void startUpdate([c.id]) },
       { label: 'Update history', icon: <History size={15} />, onSelect: () => setPanel({ kind: 'history', container: c }) },
       { label: 'Export template', icon: <FileDown size={15} />, onSelect: () => void exportTemplate(c) },
@@ -325,12 +344,13 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         advanced={advanced}
         loading={!loaded}
         busyIds={busyIds}
+        checkingIds={spinningIds}
         emptyMessage={search || filter !== 'all' ? 'No containers match your filters.' : 'No containers found.'}
         onMenu={(c, x, y) => setMenu({ container: c, x, y })}
         onAutostart={(id, enabled) =>
           withBusy(id, () => api.setAutostart(id, enabled), `Autostart ${enabled ? 'enabled' : 'disabled'} for ${nameOf(id)}`)
         }
-        onCheckUpdate={(id) => withBusy(id, () => api.checkUpdate(id), reportCheck)}
+        onCheckUpdate={(id) => void checkUpdate(id)}
         onUpdate={(id) => void startUpdate([id])}
         onCopy={copy}
       />

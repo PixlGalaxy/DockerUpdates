@@ -144,7 +144,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
           )}
         </div>
 
-        <div className="flex shrink-0 items-center justify-center gap-3 border-t border-line px-5 py-4">
+        <div className="flex shrink-0 flex-col items-center justify-center gap-2 border-t border-line px-5 py-4">
           {!done ? (
             <span className="flex items-center gap-1.5" aria-label="In progress">
               {[0, 150, 300].map((d) => (
@@ -153,8 +153,8 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
             </span>
           ) : (
             <>
-              {/* Phones: only the Done button, centered (the result is also in the title bar) */}
-              <span className={`hidden items-center gap-1.5 text-sm font-medium sm:inline-flex ${failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {/* Result above the Done button, so the button stays centered */}
+              <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${failed ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 {failed ? <CircleAlert size={16} /> : <CircleCheck size={16} />} {failed ? 'Completed with errors' : 'Completed successfully'}
               </span>
               <Button variant="primary" onClick={() => onClose(true)}>
