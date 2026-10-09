@@ -178,6 +178,12 @@ app.post('/api/operations/update', handle(async (req) => {
   });
   return { id, title };
 }));
+// body: container spec. Bad input is rejected here (the form shows it); the install itself runs with a live log
+app.post('/api/operations/create', handle(async (req) => {
+  const { run } = await dk.prepareCreate(req.body ?? {});
+  const title = 'Installing the container';
+  return { id: startOperation(title, (log) => run(log)), title };
+}));
 app.get('/api/operations/:opId/stream', (req, res) => {
   if (!/^[a-f0-9-]{36}$/.test(req.params.opId)) return res.status(404).end();
   streamOperation(req, res);

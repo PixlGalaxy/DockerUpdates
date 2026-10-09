@@ -1,4 +1,4 @@
-import type { ContainerInfo } from './types'
+import type { ContainerInfo, OperationResult } from './types'
 
 export function formatBytes(bytes: number): string {
   if (!bytes) return '0 B'
@@ -61,4 +61,9 @@ export function gradientFor(name: string): string {
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0
   return GRADIENTS[Math.abs(hash) % GRADIENTS.length]
+}
+
+/** Containers that failed in an operation result (an install has none: it fails as a whole) */
+export function failedCount(r?: OperationResult): number {
+  return r && 'failed' in r ? r.failed.length : 0
 }

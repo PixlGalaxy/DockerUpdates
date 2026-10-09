@@ -848,17 +848,57 @@ export async function editContainer(id, spec) {
   return { name };
 }
 
-export async function createContainer(spec) {
+/**
+ * Validates a new container's spec (bad input fails here, before anything is pulled or created)
+ * and returns `run(log)`, which pulls the image, creates and starts the container.
+ */
+export async function prepareCreate(spec) {
   const next = { ...spec, image: withTag(spec?.image ?? '') };
   const options = buildCreateOptions(next);
   await validateFixedIp(next.network || 'bridge', String(next.ip ?? '').trim());
   if (await exists(next.name)) throw httpError(409, `A container named "${next.name}" already exists`);
   if (spec.iconUrl) await setCustomIcon(next.image, spec.iconUrl);
-  await pull(next.image);
-  // Saved before starting: if the container fails, it can be re-created from Templates
-  await saveTemplate(next).catch((e) => console.error('Could not save template:', e.message));
-  const container = await docker.createContainer(options);
-  await container.start();
-  checkUpdateSoon(container.id);
-  return container.id;
+
+  const run = async (log = silent) => {
+    log.section(`Pulling image: ${next.image}`);
+    try {
+      await pull(next.image, log);
+    } catch (err) {
+      log.line(`ERROR: ${err.message}`);
+      log.line(`${next.name} was not created.`);
+      throw err;
+    }
+    // Saved before starting: if the container fails, it can be re-created from Templates
+    log.section(`Saving template: ${next.name}`);
+    try {
+      await saveTemplate(next);
+      log.line(`Successfully saved template: ${next.name}`);
+    } catch (e) {
+      console.error('Could not save template:', e.message);
+      log.line(`WARNING: could not save the template (${e.message})`);
+    }
+
+    log.section('Command execution');
+    log.line(dockerRunCommand(options));
+    let container;
+    try {
+      container = await docker.createContainer(options);
+      await container.start();
+    } catch (err) {
+      log.line(`ERROR: ${err.json?.message ?? err.message}`);
+      if (container) log.line(`${next.name} was created but could not start. Fix its settings with Edit, or remove it.`);
+      throw httpError(err.statusCode && err.statusCode !== 401 ? err.statusCode : 500, err.json?.message ?? err.message);
+    }
+    log.line(container.id);
+    log.line('');
+    log.line('The command finished successfully!');
+    checkUpdateSoon(container.id);
+    return { name: next.name, id: container.id };
+  };
+  return { name: next.name, run };
+}
+
+export async function createContainer(spec) {
+  const { run } = await prepareCreate(spec);
+  return (await run()).id;
 }

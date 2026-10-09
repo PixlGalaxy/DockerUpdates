@@ -94,6 +94,22 @@ export interface UpdateAllSummary {
   selfUpdate: boolean
 }
 
+/** Result of a container installed from the Add container form */
+export interface InstallResult {
+  name: string
+  id: string
+}
+
+/** A long-running operation followed live (update log / install log) */
+export type OperationKind = 'update' | 'install'
+export type OperationResult = UpdateAllSummary | InstallResult
+
+export interface LiveOperation {
+  id: string
+  title: string
+  kind: OperationKind
+}
+
 export interface BulkSummary {
   affected: number
   failed: number

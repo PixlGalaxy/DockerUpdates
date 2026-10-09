@@ -93,6 +93,8 @@ export const api = {
   startUpdate: (ids?: string[]) => post<{ id: string; title: string }>('/api/operations/update', { ids }),
   bulk: (action: ContainerAction) => post<BulkSummary>(`/api/containers/bulk/${action}`),
   create: (spec: ContainerSpec) => post<{ id: string }>('/api/containers', spec),
+  /** Validates the spec, then installs the container with a live log */
+  startCreate: (spec: ContainerSpec) => post<{ id: string; title: string }>('/api/operations/create', spec),
   spec: (id: string) => request<ContainerSpec>(`/api/containers/${id}/spec`),
   refreshIcon: (id: string) => post<{ reset: boolean }>(`/api/containers/${id}/refresh-icon`),
   edit: (id: string, spec: ContainerSpec) =>

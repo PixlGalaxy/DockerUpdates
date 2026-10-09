@@ -37,6 +37,7 @@ import type {
   ContainerInfo,
   ContainerSpec,
   HostInfo,
+  LiveOperation,
 } from '../types'
 import { isActive } from '../utils'
 
@@ -84,14 +85,14 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [editing, setEditing] = useState<{ id: string; spec: ContainerSpec } | null>(null)
   const [menu, setMenu] = useState<{ container: ContainerInfo; x: number; y: number } | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
-  const [updateOp, setUpdateOp] = useState<{ id: string; title: string } | null>(null)
-  // Update whose log was closed while it was still running (notice at the top)
-  const [backgroundOp, setBackgroundOp] = useState<{ id: string; title: string } | null>(null)
+  const [updateOp, setUpdateOp] = useState<LiveOperation | null>(null)
+  // Update / install whose log was closed while it was still running (notice at the top)
+  const [backgroundOp, setBackgroundOp] = useState<LiveOperation | null>(null)
 
   /** Opens the live update log (one container, several, or all with an update) */
   async function startUpdate(ids?: string[]) {
     try {
-      setUpdateOp(await api.startUpdate(ids))
+      setUpdateOp({ ...(await api.startUpdate(ids)), kind: 'update' })
     } catch (err) {
       onError(err)
     }
@@ -378,11 +379,14 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         <UpdateProgressModal
           opId={updateOp.id}
           title={updateOp.title}
+          kind={updateOp.kind}
           onSelfUpdate={onSelfUpdate}
           onClose={(finished) => {
             if (!finished) setBackgroundOp(updateOp)
             setUpdateOp(null)
             void refresh()
+            // A new container gets its first update check a few seconds after it starts
+            if (finished && updateOp.kind === 'install') refreshAfterCheck()
           }}
         />
       )}
@@ -392,12 +396,16 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
           key={backgroundOp.id}
           opId={backgroundOp.id}
           title={backgroundOp.title}
+          kind={backgroundOp.kind}
           onOpen={() => {
             setUpdateOp(backgroundOp)
             setBackgroundOp(null)
           }}
           onDismiss={() => setBackgroundOp(null)}
-          onFinished={() => void refresh()}
+          onFinished={() => {
+            void refresh()
+            if (backgroundOp.kind === 'install') refreshAfterCheck()
+          }}
           onSelfUpdate={onSelfUpdate}
         />
       )}
@@ -416,10 +424,10 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
           hostMemTotal={host?.memTotal}
           onClose={() => setShowAdd(false)}
           onSubmit={async (spec) => {
-            await api.create(spec).catch(handleSubmitError)
-            toast('success', `${spec.name} created (saved as template)`)
-            await refresh()
-            refreshAfterCheck()
+            // Invalid settings are rejected right away and stay in the form; then the form closes
+            // and the install runs with a live log (pull, docker run…)
+            const op = await api.startCreate(spec).catch(handleSubmitError)
+            setUpdateOp({ ...op, kind: 'install' })
           }}
         />
       )}

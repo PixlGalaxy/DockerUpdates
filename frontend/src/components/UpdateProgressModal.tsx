@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, CloudDownload, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { UpdateAllSummary } from '../types'
+import type { OperationKind, OperationResult } from '../types'
+import { failedCount } from '../utils'
 import Modal from './Modal'
 import { Button } from './ui'
 
@@ -13,18 +14,20 @@ type Event =
   | { t: 'section'; title: string }
   | { t: 'line'; text: string }
   | { t: 'layer'; id: string; text: string }
-  | { t: 'done'; ok: boolean; result?: UpdateAllSummary; error?: string }
+  | { t: 'done'; ok: boolean; result?: OperationResult; error?: string }
 
 interface Props {
   opId: string
   title: string
+  kind?: OperationKind
   /** `finished`: false when closed while the update is still running */
   onClose: (finished: boolean) => void
   onSelfUpdate: () => void
 }
 
-/** Live log of an update, styled like Unraid's "Updating the container" window. */
-export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate }: Props) {
+/** Live log of an update or install, styled like Unraid's "Updating the container" window. */
+export default function UpdateProgressModal({ opId, title, kind = 'update', onClose, onSelfUpdate }: Props) {
+  const work = kind === 'install' ? 'installation' : 'update'
   const [sections, setSections] = useState<Section[]>([])
   const [done, setDone] = useState<Extract<Event, { t: 'done' }> | null>(null)
   const [lost, setLost] = useState(false)
@@ -49,7 +52,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
       if (e.t === 'done') {
         setDone(e)
         es.close()
-        if (e.ok && e.result?.selfUpdate) selfUpdateRef.current()
+        if (e.ok && e.result && 'selfUpdate' in e.result && e.result.selfUpdate) selfUpdateRef.current()
         return
       }
       setSections((prev) => {
@@ -79,7 +82,7 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
     if (follow.current && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [sections, done])
 
-  const failed = done && (!done.ok || (done.result?.failed.length ?? 0) > 0)
+  const failed = done && (!done.ok || failedCount(done.result) > 0)
   const state = !done ? 'In Progress' : failed ? 'Finished with errors' : 'Finished'
 
   return (
@@ -94,8 +97,8 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
         done?.result
           ? summary(done.result)
           : lost && !done
-            ? 'Connection to the server lost — the update keeps running in the background'
-            : 'You can close this window: the update keeps running in the background'
+            ? `Connection to the server lost — the ${work} keeps running in the background`
+            : `You can close this window: the ${work} keeps running in the background`
       }
       icon={<CloudDownload size={18} />}
       size="xl"
@@ -168,7 +171,8 @@ export default function UpdateProgressModal({ opId, title, onClose, onSelfUpdate
   )
 }
 
-function summary(r: UpdateAllSummary) {
+function summary(r: OperationResult) {
+  if (!('failed' in r)) return `${r.name} installed and started`
   const parts = []
   if (r.updated) parts.push(`${r.updated} updated`)
   if (r.selfUpdate) parts.push('DockerUpdates is restarting')
