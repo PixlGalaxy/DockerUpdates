@@ -1,6 +1,6 @@
 // HTTP hardening: security headers, strict same-origin policy (no CORS), input checks.
 import helmet from 'helmet';
-import { auditThrottled } from './auth.js';
+import { audit, auditThrottled } from './auth.js';
 import { allowedOrigins } from './runtimeConfig.js';
 
 // Proxies whose X-Forwarded-* headers are trusted (TRUST_PROXY, editable in Settings) and the
