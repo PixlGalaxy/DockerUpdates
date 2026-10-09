@@ -285,19 +285,22 @@ if (process.platform === 'linux') {
 
 export async function doAction(id, action) {
   const c = docker.getContainer(id);
-  const fn = { start: 'start', stop: 'stop', restart: 'restart', pause: 'pause', unpause: 'unpause' }[action];
+  const ACTIONS = { start: 'start', stop: 'stop', restart: 'restart', pause: 'pause', unpause: 'unpause' };
+  // Object.hasOwn: "constructor" / "toString" must not resolve to Object.prototype members
+  const fn = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : null;
   if (!fn) throw httpError(400, 'Invalid action');
   if (action === 'stop' || action === 'pause') await assertNotSelf(id, action);
   await c[fn]();
 }
 
 export async function bulk(action) {
-  const wanted = {
+  const WANTED = {
     start: ['exited', 'created'],
     stop: ['running', 'paused'],
     pause: ['running'],
     unpause: ['paused'],
-  }[action];
+  };
+  const wanted = Object.hasOwn(WANTED, action) ? WANTED[action] : null;
   if (!wanted) throw httpError(400, 'Invalid action');
   const [list, self] = await Promise.all([docker.listContainers({ all: true }), selfId()]);
   // Never stop/pause DockerUpdates itself, otherwise nobody could resume it from the UI.

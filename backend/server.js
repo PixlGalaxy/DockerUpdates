@@ -63,7 +63,9 @@ const handle = (fn) => async (req, res) => {
     // Never forward a Docker API 401: the frontend treats 401 as "session expired".
     const code = err.status || (err.statusCode && err.statusCode !== 401 ? err.statusCode : 500);
     if (code >= 500) console.error(err);
-    res.status(code).json({ error: err.json?.message ?? err.message });
+    // Docker errors carry a readable message (err.json); unexpected 500s stay in the server log
+    const message = err.json?.message ?? (code >= 500 && !err.status ? 'Internal server error' : err.message);
+    res.status(code).json({ error: message });
   }
 };
 

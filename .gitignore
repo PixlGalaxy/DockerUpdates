@@ -20,3 +20,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Local clone of the GitHub wiki (published with scripts/publish-wiki.sh)
+wiki/

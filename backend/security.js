@@ -1,6 +1,6 @@
 // HTTP hardening: security headers, strict same-origin policy (no CORS), input checks.
 import helmet from 'helmet';
-import { audit } from './auth.js';
+import { auditThrottled } from './auth.js';
 import { allowedOrigins } from './runtimeConfig.js';
 
 // Proxies whose X-Forwarded-* headers are trusted (TRUST_PROXY, editable in Settings) and the
@@ -76,7 +76,8 @@ export function sameOriginOnly(req, res, next) {
   // Host is set by the client/proxy (NPM forwards it as-is); X-Forwarded-Host is ignored
   // because any client could send it.
   if (host !== req.get('host') && !isAllowedOrigin(origin)) {
-    audit(req, `blocked ${req.method} ${req.path} from origin ${origin}`);
+    // Reachable without a session: logged at most once per address per minute
+    auditThrottled(req, `blocked ${req.method} ${req.path} from origin ${origin.slice(0, 200)}`);
     return res.status(403).json({ error: 'Origin not allowed' });
   }
   next();

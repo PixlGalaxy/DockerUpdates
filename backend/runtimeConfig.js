@@ -237,9 +237,13 @@ export async function updateConfig(patch) {
       const registry = String(e?.registry ?? '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       const username = String(e?.username ?? '').trim();
       let password = String(e?.password ?? '');
-      // Unchanged mask: keep the stored token of the same registry
-      if (password === MASK) password = current.find((c) => c.registry === registry)?.password ?? current[i]?.password ?? '';
       if (!registry || !/^[\w.-]+(:\d+)?$/.test(registry)) throw bad(`Row ${i + 1}: enter a registry host, e.g. ghcr.io`);
+      // Unchanged mask: keep the stored token of that same registry only. A token is never
+      // carried over to a different host (it would be sent to the wrong registry).
+      if (password === MASK) {
+        password = current.find((c) => c.registry === registry)?.password ?? '';
+        if (!password) throw bad(`${registry}: enter the token again (the saved one belongs to another registry)`);
+      }
       if (!username || !password) throw bad(`${registry}: enter a username and a token`);
       return { registry, username, password };
     });
