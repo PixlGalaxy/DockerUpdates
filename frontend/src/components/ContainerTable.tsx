@@ -271,7 +271,7 @@ export default function ContainerTable({
   return (
     <div
       ref={listRef}
-      className={onReorder ? 'contents cursor-grab select-none [-webkit-touch-callout:none]' : 'contents'}
+      className={onReorder ? 'cursor-grab select-none [-webkit-touch-callout:none]' : undefined}
       onPointerDown={pressRow}
       // While unlocked the rows only move: their buttons, links and menus do nothing
       onClickCapture={(e) => {
