@@ -394,6 +394,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       <ContainerTable
         containers={visible}
         hostIp={hostIp}
+        hostCpus={host?.cpus}
         advanced={advanced}
         loading={!loaded}
         busyIds={busyIds}

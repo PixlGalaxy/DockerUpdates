@@ -36,6 +36,8 @@ interface Props {
   grip?: ReactNode
   /** This container is being dragged */
   dragging?: boolean
+  /** Cores of the Docker host (scale of the CPU bar) */
+  hostCpus?: number
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -112,6 +114,7 @@ export default function ContainerRow({
   onCopy,
   grip,
   dragging,
+  hostCpus,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -236,7 +239,7 @@ export default function ContainerRow({
 
       {/* Resources */}
       <td className={`${td} w-44 min-w-44`}>
-        <Resources container={c} />
+        <Resources container={c} hostCpus={hostCpus} />
       </td>
 
       {/* Autostart */}
@@ -267,6 +270,7 @@ export function ContainerCard({
   onCopy,
   grip,
   dragging,
+  hostCpus,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -375,7 +379,7 @@ export function ContainerCard({
           </CardField>
         )}
 
-        {c.state === 'running' && <Resources container={c} wide />}
+        {c.state === 'running' && <Resources container={c} hostCpus={hostCpus} wide />}
       </div>
 
       <div className="flex items-center gap-3 border-t border-line bg-surface-2/40 px-4 py-2.5 text-xs">
@@ -536,7 +540,16 @@ function UpdateInfo({
   )
 }
 
-function Resources({ container: c, wide }: { container: ContainerInfo; wide?: boolean }) {
+function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerInfo; wide?: boolean; hostCpus?: number }) {
+  // CPU % is per core, like `docker stats`: 100% = one full core, so 140% = 1.4 cores. The bar
+  // shows it against the cores the container can really use (its limit, its pinned cores or
+  // every core of the host), so it only fills up when the container uses all of them.
+  const cores = Math.min(...[c.cpuLimit, c.cpusetCount, hostCpus].filter((n) => n > 0), Infinity)
+  const capacity = Number.isFinite(cores) ? cores : 1
+  const cpuPct = c.cpuPercent / capacity
+  const used = c.cpuPercent / 100
+  const fmtCores = (n: number) => String(Number(n.toFixed(n < 1 ? 2 : 1)))
+  const cpuTitle = `${fmtCores(Math.round(used * 100) / 100)} of ${fmtCores(capacity)} core${capacity === 1 ? '' : 's'} (${Math.min(100, cpuPct).toFixed(0)}% of the CPU available to this container). 100% = one full core.`
   // Prefer the limit configured on the container; otherwise Docker reports the host RAM
   const memLimit = c.memLimitConfigured || c.memLimit
   const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
@@ -546,15 +559,22 @@ function Resources({ container: c, wide }: { container: ContainerInfo; wide?: bo
         <div className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-muted">
             CPU
-            {c.cpuLimit > 0 && (
-              <span className="ml-1 text-[10px] text-muted/80" title="CPU limit configured on the container">
-                max {c.cpuLimit}
+            {(c.cpuLimit > 0 || c.cpusetCount > 0) && (
+              <span
+                className="ml-1 text-[10px] text-muted/80"
+                title={c.cpuLimit > 0 && c.cpuLimit <= (c.cpusetCount || Infinity) ? 'CPU limit configured on the container' : 'Cores the container is pinned to (--cpuset-cpus)'}
+              >
+                max {fmtCores(capacity)}
               </span>
             )}
           </span>
-          <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
+          <span className="font-medium tabular-nums" title={cpuTitle}>
+            {c.cpuPercent.toFixed(1)}%
+          </span>
         </div>
-        <Meter value={c.cpuPercent} tone="cpu" />
+        <div title={cpuTitle}>
+          <Meter value={cpuPct} tone="cpu" />
+        </div>
       </div>
       <div>
         <div className="mb-1 flex items-baseline justify-between gap-2">

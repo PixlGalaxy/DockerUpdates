@@ -65,6 +65,8 @@ export interface ContainerInfo {
   memLimitConfigured: number
   /** CPU limit in cores (0 = no limit) */
   cpuLimit: number
+  /** Cores the container is pinned to (--cpuset-cpus), 0 = all */
+  cpusetCount: number
   /** URL of the cached icon, if any */
   icon?: string
 }

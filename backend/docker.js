@@ -155,6 +155,16 @@ async function stats(id) {
   }
 }
 
+/** Number of cores in a cpuset such as "0-3,6" (0 when empty or unreadable). */
+function cpusetCount(set) {
+  let n = 0;
+  for (const part of String(set ?? '').split(',')) {
+    const m = /^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/.exec(part);
+    if (m) n += m[2] === undefined ? 1 : Math.max(0, Number(m[2]) - Number(m[1]) + 1);
+  }
+  return n;
+}
+
 export async function listContainers() {
   const [list, self] = await Promise.all([docker.listContainers({ all: true }), selfId()]);
   const visible = list.filter((info) => !info.Labels?.[UPDATER_LABEL]);
@@ -213,6 +223,8 @@ export async function listContainers() {
           : inspect.HostConfig.CpuQuota > 0
             ? inspect.HostConfig.CpuQuota / (inspect.HostConfig.CpuPeriod || 100000)
             : 0,
+        // Cores the container is pinned to with --cpuset-cpus (0 = all of them)
+        cpusetCount: cpusetCount(inspect.HostConfig.CpusetCpus),
         icon: iconUrlFor(inspect.Config.Image),
         projectUrl: projectUrl(inspect.Config.Labels),
         _discover: {

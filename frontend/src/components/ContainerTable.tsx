@@ -7,6 +7,8 @@ import Logo from './Logo'
 interface Props {
   containers: ContainerInfo[]
   hostIp: string
+  /** Cores of the Docker host (scale of the CPU bars) */
+  hostCpus?: number
   advanced: boolean
   loading: boolean
   busyIds: Set<string>
@@ -33,6 +35,7 @@ const LIFT_SHADOW = '0 18px 40px -8px rgb(0 0 0 / 0.35)'
 export default function ContainerTable({
   containers,
   hostIp,
+  hostCpus,
   advanced,
   loading,
   busyIds,
@@ -303,6 +306,7 @@ export default function ContainerTable({
               key={c.id}
               container={c}
               hostIp={hostIp}
+              hostCpus={hostCpus}
               advanced={advanced}
               busy={busyIds.has(c.id)}
               checking={checkingIds.has(c.id)}
@@ -362,6 +366,7 @@ export default function ContainerTable({
                     key={c.id}
                     container={c}
                     hostIp={hostIp}
+                    hostCpus={hostCpus}
                     advanced={advanced}
                     busy={busyIds.has(c.id)}
                     checking={checkingIds.has(c.id)}
