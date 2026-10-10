@@ -57,6 +57,22 @@ Refused connections are also written to **Admin Panel > Server logs** as `consol
 
 Your reverse proxy changes the `Host` header. Pass it unchanged, or add the public URL to [`ALLOWED_ORIGINS`](Configuration.md#allowed_origins).
 
+## "Invalid compose file" when deploying a stack
+
+The message is the error of `docker compose config`, with the line and column. Usual causes: tabs instead of spaces (YAML only allows spaces), a wrong indentation, or a `${VARIABLE}` missing from the `.env` box. The file is not saved until it is valid.
+
+## "Relative paths (./…) would be created in a different folder on the host"
+
+The compose file uses relative paths but the stacks folder is not mounted at the same path on the host and in DockerUpdates. Mount one (`-v /opt/stacks:/opt/stacks` and `STACKS_DIR=/opt/stacks`), or use named volumes / absolute host paths. See [Compose stacks](Compose-Stacks.md#relative-paths).
+
+## "docker CLI not found"
+
+Compose stacks need the docker CLI with the compose plugin. The image includes both; when running from source, install them or set `DOCKER_CLI` to the full path of `docker` (see [Configuration](Configuration.md#docker_cli)).
+
+## Edit is disabled on a container
+
+It belongs to a compose stack. A stack created in DockerUpdates is changed with **Edit compose file** (right-click the stack or the container); a stack started elsewhere is changed in its own compose file, then `docker compose up -d`.
+
 ## DockerUpdates does not start
 
 Check `docker logs dockerupdates`:

@@ -38,6 +38,8 @@ REGISTRY_AUTH=ghcr.io=myuser:ghp_xxx,docker.io=myuser:dckr_pat_xxx
 
 For each registry, credentials are taken from Settings (or `REGISTRY_AUTH` if nothing was saved there) first, then from the mounted `config.json`, and otherwise the pull is anonymous.
 
+[Compose stacks](Compose-Stacks.md) created in DockerUpdates are pulled by `docker compose`, which only reads the mounted `config.json` (option 2): credentials saved in Settings or in `REGISTRY_AUTH` are not used for them.
+
 ## Creating tokens
 
 | Registry | Token | Scope |

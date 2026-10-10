@@ -1,6 +1,6 @@
 # DockerUpdates documentation
 
-DockerUpdates is a self-hosted web dashboard to manage the Docker containers of your server and keep them updated: live status and resources, update checks, scheduled automatic updates, notifications, logs, a console, a container editor and more.
+DockerUpdates is a self-hosted web dashboard to manage the Docker containers of your server and keep them updated: live status and resources, update checks, scheduled automatic updates, notifications, logs, a console, a container editor, compose stacks and more.
 
 ![DockerUpdates dashboard](https://raw.githubusercontent.com/PixlGalaxy/DockerUpdates/main/docs/screenshots/home.webp)
 
@@ -16,6 +16,7 @@ DockerUpdates is a self-hosted web dashboard to manage the Docker containers of 
 | [Reverse proxy](Reverse-Proxy.md) | Nginx Proxy Manager, HTTPS, `TRUST_PROXY`, `COOKIE_SECURE` |
 | [Private registries](Private-Registries.md) | GHCR, Docker Hub and other private images |
 | [LAN network](LAN-Network.md) | Dedicated LAN IPs for containers (macvlan / ipvlan) |
+| [Compose stacks](Compose-Stacks.md) | Deploy, edit and update `docker-compose` stacks; how stacks started elsewhere are shown |
 | [Admin Panel](Admin-Panel.md) | Sessions, server logs, IP access and bans, system information |
 | [Security](Security.md) | Security model, hardening checklist, `no-new-privileges` |
 | [Troubleshooting](Troubleshooting.md) | Common problems and how to fix them |
