@@ -7,6 +7,7 @@ import {
   FileDown,
   FileUp,
   ImageIcon,
+  Info,
   LayoutTemplate,
   LoaderCircle,
   MemoryStick,
@@ -31,11 +32,14 @@ import Logo from './Logo'
 import { Button, IconButton, Toggle } from './ui'
 
 interface Props {
-  mode: 'add' | 'edit'
-  /** Current settings when editing */
+  /** view: the settings of a container that is not edited here (a compose service), read-only */
+  mode: 'add' | 'edit' | 'view'
+  /** Current settings when editing / viewing */
   initial?: ContainerSpec
   onClose: () => void
-  onSubmit: (spec: ContainerSpec) => Promise<void>
+  onSubmit?: (spec: ContainerSpec) => Promise<void>
+  /** View mode: why it cannot be edited here, shown in the footer */
+  readOnlyNote?: string
   /** Host RAM in bytes (max of the memory slider) */
   hostMemTotal?: number
 }
@@ -86,7 +90,7 @@ const inputCls =
 
 type ExtraCheck = { state: 'idle' | 'checking' } | { state: 'ok'; summary: string[] } | { state: 'error'; message: string }
 
-export default function ContainerFormModal({ mode, initial, onClose, onSubmit, hostMemTotal = 0 }: Props) {
+export default function ContainerFormModal({ mode, initial, onClose, onSubmit, readOnlyNote, hostMemTotal = 0 }: Props) {
   const [form, setForm] = useState<ContainerSpec>({ ...EMPTY, ...initial })
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
@@ -100,7 +104,9 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
   // Host ports already taken (by another container or a service on the server), by row index
   const [portConflicts, setPortConflicts] = useState<Record<number, string>>({})
   const portSeq = useRef(0)
-  const editing = mode === 'edit'
+  const viewing = mode === 'view'
+  // Viewing an existing container works like editing it (port checks ignore its own ports…)
+  const editing = mode === 'edit' || viewing
 
   useEffect(() => {
     api.networks().then(setNetworks, () => setNetworks([]))
@@ -208,6 +214,7 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (viewing || !onSubmit) return
     if (extraCheck.state === 'error') return setError(`Extra parameters: ${extraCheck.message}`)
     setSaving(true)
     setError(null)
@@ -244,9 +251,13 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
             )}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate font-semibold">{editing ? `Edit ${initial?.name}` : 'Add container'}</h2>
+            <h2 className="truncate font-semibold">
+              {viewing ? `Settings of ${initial?.name}` : editing ? `Edit ${initial?.name}` : 'Add container'}
+            </h2>
             <p className="text-xs text-muted">
-              {editing
+              {viewing
+                ? 'Read-only: the settings this container runs with.'
+                : editing
                 ? 'Applying recreates the container with the new settings (it will restart).'
                 : 'The image is pulled and the container started automatically.'}
             </p>
@@ -263,9 +274,11 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
                 e.target.value = ''
               }}
             />
-            <IconButton label="Import template (.json)" onClick={() => fileInput.current?.click()}>
-              <FileUp size={16} />
-            </IconButton>
+            {!viewing && (
+              <IconButton label="Import template (.json)" onClick={() => fileInput.current?.click()}>
+                <FileUp size={16} />
+              </IconButton>
+            )}
             <IconButton label="Export template (.json)" onClick={exportTemplate} disabled={!form.image}>
               <FileDown size={16} />
             </IconButton>
@@ -305,7 +318,8 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
           </div>
         )}
 
-        <div className="space-y-6 px-4 py-5 sm:px-6">
+        {/* View mode: every field and button inside is disabled at once */}
+        <fieldset disabled={viewing} className="m-0 min-w-0 space-y-6 border-0 px-4 py-5 sm:px-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Name">
               <input
@@ -493,20 +507,35 @@ export default function ContainerFormModal({ mode, initial, onClose, onSubmit, h
               {error}
             </p>
           )}
-        </div>
+        </fieldset>
 
         <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-line bg-surface-2/50 px-4 py-4 sm:px-6">
-          {editing && (
-            <span className="mr-auto hidden items-center gap-1.5 text-xs text-amber-600 sm:flex dark:text-amber-400">
-              <TriangleAlert size={13} /> The container will be recreated
-            </span>
+          {viewing ? (
+            <>
+              {readOnlyNote && (
+                <span className="mr-auto flex items-start gap-1.5 text-xs text-muted">
+                  <Info size={13} className="mt-0.5 shrink-0 text-sky-500" /> {readOnlyNote}
+                </span>
+              )}
+              <Button variant="primary" onClick={onClose}>
+                Close
+              </Button>
+            </>
+          ) : (
+            <>
+              {editing && (
+                <span className="mr-auto hidden items-center gap-1.5 text-xs text-amber-600 sm:flex dark:text-amber-400">
+                  <TriangleAlert size={13} /> The container will be recreated
+                </span>
+              )}
+              <Button onClick={onClose} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" loading={saving} disabled={extraCheck.state === 'error'}>
+                {saving ? (editing ? 'Applying…' : 'Creating…') : editing ? 'Apply' : 'Create container'}
+              </Button>
+            </>
           )}
-          <Button onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" loading={saving} disabled={extraCheck.state === 'error'}>
-            {saving ? (editing ? 'Applying…' : 'Creating…') : editing ? 'Apply' : 'Create container'}
-          </Button>
         </div>
       </form>
     </div>

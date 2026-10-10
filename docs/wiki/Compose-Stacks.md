@@ -8,6 +8,7 @@ A stack is a group of containers described in one `docker-compose` file (for exa
 | --- | --- | --- |
 | Where the file is | `STACKS_DIR/<name>/compose.yaml` | Wherever you ran `docker compose` |
 | Edit | **Edit compose file**: saved and redeployed with `docker compose up -d` | Edit it in its own file; the container form is disabled so the containers never differ from it |
+| See a container's settings | **View settings** (right-click it): the container form, read-only | Same |
 | Update | `docker compose pull` + `up -d --no-deps` for the services with an update | Each container is recreated with the same settings and the new image, as for any container |
 | Start / stop / restart | `docker compose start / stop / restart` | Container by container |
 | Remove | **Remove stack**: `docker compose down` (volumes are kept) | Not from DockerUpdates |

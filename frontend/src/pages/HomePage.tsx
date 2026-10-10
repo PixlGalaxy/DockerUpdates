@@ -1,5 +1,6 @@
 import {
   CloudDownload,
+  Eye,
   Copy,
   ExternalLink,
   FileDown,
@@ -126,6 +127,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [editing, setEditing] = useState<{ id: string; spec: ContainerSpec } | null>(null)
+  // Read-only settings of a compose service (it is edited in its compose file, not in the form)
+  const [viewing, setViewing] = useState<{ container: ContainerInfo; spec: ContainerSpec } | null>(null)
   const [menu, setMenu] = useState<{ container: ContainerInfo; x: number; y: number } | null>(null)
   const [panel, setPanel] = useState<Panel>(null)
   const [updateOp, setUpdateOp] = useState<LiveOperation | null>(null)
@@ -531,6 +534,12 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
             onSelect: () => void openStackEditor(c.stack!.project),
           }
         : { label: 'Edit', icon: <Pencil size={15} />, hidden: c.isSelf, separatorBefore: true, onSelect: () => void openEditor(c.id) },
+      {
+        label: 'View settings',
+        icon: <Eye size={15} />,
+        hidden: !c.stack,
+        onSelect: () => void withBusy(c.id, async () => setViewing({ container: c, spec: await api.spec(c.id) })),
+      },
       { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => void checkUpdate(c.id) },
       { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => void startUpdate([c.id]) },
       { label: 'Update history', icon: <History size={15} />, onSelect: () => setPanel({ kind: 'history', container: c }) },
@@ -855,6 +864,20 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
             const op = await api.startCreate(spec).catch(handleSubmitError)
             setUpdateOp({ ...op, kind: 'install' })
           }}
+        />
+      )}
+
+      {viewing && (
+        <ContainerFormModal
+          mode="view"
+          initial={viewing.spec}
+          hostMemTotal={host?.memTotal}
+          readOnlyNote={
+            viewing.container.stack?.managed
+              ? `Service "${viewing.container.stack.service}" of the stack ${viewing.container.stack.project}: change it with Edit compose file.`
+              : `Service "${viewing.container.stack?.service}" of the stack ${viewing.container.stack?.project}, started outside DockerUpdates: change it in its own compose file.`
+          }
+          onClose={() => setViewing(null)}
         />
       )}
 
