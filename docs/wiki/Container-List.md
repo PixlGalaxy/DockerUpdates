@@ -34,6 +34,7 @@ From the menu of a folder:
 | Start all / Stop all / Restart all | On every container of the folder (DockerUpdates itself is never stopped) |
 | Rename folder | Up to 40 characters |
 | Select color | One of 10 colors; **Automatic** picks one from the folder |
+| Set icon | An image URL (png, jpg, webp, gif, svg or ico) shown instead of the folder symbol, like the Icon URL of a container; **Remove icon** goes back to the symbol |
 | Ungroup folder | Removes the folder; its containers go back to the list in its place |
 
 Outside the reorder mode, **Remove from <folder>** in the menu of a container also takes it out of its folder, right below it. The autostart switch of a folder sets autostart on every container in it. The search also finds containers by the name of their folder.

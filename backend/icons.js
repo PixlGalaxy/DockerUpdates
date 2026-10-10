@@ -167,8 +167,12 @@ export async function customIconUrl(image) {
  * Throws 400 with a readable message if the URL is not a usable image.
  */
 export async function setCustomIcon(image, url) {
+  await setIcon(repoOf(image), url);
+}
+
+/** Sets or clears (empty url) the custom icon stored under `repo` (an image repo or a group key). */
+async function setIcon(repo, url) {
   await load();
-  const repo = repoOf(image);
   const value = String(url ?? '').trim();
   if (value === (db[repo]?.source === 'custom' ? db[repo].url : '')) return; // unchanged
 
@@ -200,8 +204,38 @@ export async function setCustomIcon(image, url) {
 
 /** URL the UI should use for a container's icon, or undefined. */
 export function iconUrlFor(image) {
-  const entry = db?.[repoOf(image)];
-  return entry?.file ? `/api/icons/${keyOf(repoOf(image))}?v=${entry.hash}` : undefined;
+  return servedUrl(repoOf(image));
+}
+
+function servedUrl(repo) {
+  const entry = db?.[repo];
+  return entry?.file ? `/api/icons/${keyOf(repo)}?v=${entry.hash}` : undefined;
+}
+
+// ---------- Stacks and folders ----------
+// Their icons live in the same store as container icons, under "group:stack:<project>" /
+// "group:folder:<id>" (an image repo never starts with "group:").
+
+const GROUP_KEY_RE = /^(stack:[a-z0-9][a-z0-9_-]{0,62}|folder:[a-z0-9]{1,32})$/;
+
+function groupRepo(key) {
+  if (!GROUP_KEY_RE.test(String(key))) throw bad('Invalid stack or folder');
+  return `group:${key}`;
+}
+
+/** Sets (downloads + validates) or clears (empty url) the icon of a stack or folder. */
+export async function setGroupIcon(key, url) {
+  await setIcon(groupRepo(key), url);
+}
+
+/** { "stack:media": { url: icon URL as typed, icon: URL to show } } for every stack / folder with one. */
+export async function groupIcons() {
+  await load();
+  return Object.fromEntries(
+    Object.entries(db)
+      .filter(([repo, entry]) => repo.startsWith('group:') && entry.source === 'custom')
+      .map(([repo, entry]) => [repo.slice('group:'.length), { url: entry.url, icon: servedUrl(repo) }]),
+  );
 }
 
 /** Resolves /api/icons/:key to a file on disk. */

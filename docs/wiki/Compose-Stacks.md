@@ -12,7 +12,7 @@ A stack is a group of containers described in one `docker-compose` file (for exa
 | Start / stop / restart | `docker compose start / stop / restart` | Container by container |
 | Remove | **Remove stack**: `docker compose down` (volumes are kept) | Not from DockerUpdates |
 
-Every stack, managed or external, shows the CPU and RAM of all its running services, their ports, an autostart switch for all of them, and an update button when any service has an update. Right-click a stack for its actions and **Select color**.
+Every stack, managed or external, shows the CPU and RAM of all its running services, their ports, an autostart switch for all of them, and an update button when any service has an update. Right-click a stack for its actions, **Select color** and **Set icon** (an image URL shown instead of the stack symbol, like the Icon URL of a container).
 
 ## Create a stack
 

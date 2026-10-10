@@ -7,7 +7,7 @@ import { describeExtraParams } from './extraParams.js';
 import { suppressHealthAlerts } from './health.js';
 import { addHistory, renameInHistory } from './history.js';
 import { validateFixedIp } from './ipCheck.js';
-import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon } from './icons.js';
+import { customIconUrl, discoverIcons, iconUrlFor, setCustomIcon, setGroupIcon } from './icons.js';
 import { authFor, authHint, isAuthError } from './registryAuth.js';
 import { silent } from './operations.js';
 import { renameInFolders } from './folders.js';
@@ -808,6 +808,7 @@ export async function stackAction(project, action) {
     if (!managed) throw httpError(400, 'Only stacks created in DockerUpdates can be removed here');
     await removeStack(project);
     await setStackColor(project, null).catch(() => {});
+    await setGroupIcon(`stack:${project}`, '').catch(() => {});
     return { affected: list.length, failed: 0 };
   }
   if (managed) {

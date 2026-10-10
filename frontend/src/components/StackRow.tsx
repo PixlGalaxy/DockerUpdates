@@ -1,5 +1,5 @@
 import { ChevronRight, CircleCheck, CircleDashed, CloudDownload, EllipsisVertical, Folder, Layers, RefreshCw } from 'lucide-react'
-import type { MouseEvent, ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { StackColor } from '../stackColors'
 import type { ContainerInfo } from '../types'
 import { MERGE_TARGET } from '../utils'
@@ -22,6 +22,8 @@ export interface StackGroup {
   managed: boolean
   containers: ContainerInfo[]
   color: StackColor
+  /** Custom icon (URL of the cached file), shown instead of the stack / folder symbol */
+  icon?: string
 }
 
 interface Props {
@@ -80,11 +82,22 @@ function StackUsage({ stack, hostCpus, wide }: { stack: StackGroup; hostCpus?: n
   return usage ? <Resources container={usage} hostCpus={hostCpus} wide={wide} /> : <span className="text-xs text-muted">—</span>
 }
 
-const stackIcon = (stack: StackGroup) => (
-  <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${stack.color.icon}`}>
-    {stack.kind === 'stack' ? <Layers size={20} /> : <Folder size={20} />}
-  </span>
-)
+/** Custom icon like a container's (white tile), else the stack / folder symbol in its color */
+function StackIcon({ stack }: { stack: StackGroup }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  if (stack.icon && failed !== stack.icon) {
+    return (
+      <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white p-1 shadow-sm">
+        <img src={stack.icon} alt="" loading="lazy" className="size-full object-contain" onError={() => setFailed(stack.icon!)} />
+      </span>
+    )
+  }
+  return (
+    <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${stack.color.icon}`}>
+      {stack.kind === 'stack' ? <Layers size={20} /> : <Folder size={20} />}
+    </span>
+  )
+}
 
 /** Published / exposed ports of every service (host-network services have none to list) */
 function stackPorts(stack: StackGroup) {
@@ -248,7 +261,7 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
             className="-mr-1 flex items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-sky-500"
           >
             <ChevronRight size={16} className={`-ml-1 text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-            {stackIcon(stack)}
+            <StackIcon stack={stack} />
           </button>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -306,7 +319,7 @@ export function StackCard({ stack, hostCpus, collapsed, busy, checking, onToggle
         {grip}
         <button type="button" onClick={onToggle} aria-expanded={!collapsed} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
           <ChevronRight size={16} className={`shrink-0 text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-          {stackIcon(stack)}
+          <StackIcon stack={stack} />
           <span className="min-w-0">
             <span className="block truncate font-semibold">{stack.name}</span>
             <StackStatus stack={stack} />

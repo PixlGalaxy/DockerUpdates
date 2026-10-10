@@ -31,6 +31,7 @@ import StatsCards, { type Filter } from '../components/StatsCards'
 import BackgroundUpdate from '../components/BackgroundUpdate'
 import UpdateProgressModal from '../components/UpdateProgressModal'
 import FolderNameModal from '../components/FolderNameModal'
+import GroupIconModal from '../components/GroupIconModal'
 import StackColorPicker from '../components/StackColorPicker'
 import StackFormModal from '../components/StackFormModal'
 import type { StackGroup } from '../components/StackRow'
@@ -41,6 +42,7 @@ import type {
   BulkSummary,
   CheckResult,
   ContainerFolder,
+  GroupIcon,
   CheckSummary,
   ContainerAction,
   ContainerInfo,
@@ -107,6 +109,9 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   // Folders of standalone containers, and the folder being named (`created`: just made)
   const [folders, setFolders] = useState<ContainerFolder[]>([])
   const [naming, setNaming] = useState<{ folder: ContainerFolder; created: boolean } | null>(null)
+  // Icons of stacks and folders, and the group whose icon is being set
+  const [groupIcons, setGroupIcons] = useState<Record<string, GroupIcon>>({})
+  const [iconFor, setIconFor] = useState<StackGroup | null>(null)
   const [collapsedList, setCollapsedList] = useStoredState<string[]>('du:collapsed-stacks', [])
   const collapsed = useMemo(() => new Set(collapsedList), [collapsedList])
   // Custom order saved on the server, and the order being edited while the lock is open
@@ -143,6 +148,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       setStacks(data.stacks ?? [])
       setStackColors(data.stackColors ?? {})
       setFolders(data.folders ?? [])
+      setGroupIcons(data.groupIcons ?? {})
       setOrder(data.order ?? [])
       setHostIp(data.hostIp)
       onHost(data.hostIp, data.hostName)
@@ -442,6 +448,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Restart all', icon: <RotateCw size={15} />, hidden: !anyActive, onSelect: () => void folderAction(group, 'restart') },
       { label: 'Rename folder', icon: <Pencil size={15} />, separatorBefore: true, onSelect: () => folder && setNaming({ folder, created: false }) },
       { label: 'Select color', icon: <Palette size={15} />, onSelect: () => setColorPicker({ group, x, y }) },
+      { label: 'Set icon', icon: <ImageIcon size={15} />, onSelect: () => setIconFor(group) },
       {
         label: 'Ungroup folder',
         icon: <FolderX size={15} />,
@@ -477,6 +484,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         separatorBefore: true,
         onSelect: () => setColorPicker({ group: st, x, y }),
       },
+      { label: 'Set icon', icon: <ImageIcon size={15} />, onSelect: () => setIconFor(st) },
       {
         label: st.managed ? 'Edit compose file' : 'Edit compose file (external)',
         icon: <Pencil size={15} />,
@@ -571,7 +579,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
 
   const items = useMemo(() => {
     // Reordering: every container and stack, in the order being edited
-    if (draft) return sortItems(groupItems(containers, stacks, stackColors, draft.folders), draft.order)
+    if (draft) return sortItems(groupItems(containers, stacks, stackColors, draft.folders, groupIcons), draft.order)
     const q = search.trim().toLowerCase()
     const shown = containers
       .filter((c) => {
@@ -588,8 +596,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       )
     // Managed stacks with no container (not deployed) only show in the unfiltered list
     const empty = filter === 'all' ? stacks.filter((s) => !q || s.includes(q)) : []
-    return sortItems(groupItems(shown, empty, stackColors, folders), order)
-  }, [containers, stacks, stackColors, folders, filter, search, order, draft])
+    return sortItems(groupItems(shown, empty, stackColors, folders, groupIcons), order)
+  }, [containers, stacks, stackColors, folders, groupIcons, filter, search, order, draft])
 
   /** Lock button: open = start reordering every container; closed again = save the order and folders */
   async function toggleOrder() {
@@ -752,6 +760,18 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         />
       )}
 
+      {iconFor && (
+        <GroupIconModal
+          kind={iconFor.kind}
+          name={iconFor.name}
+          initial={groupIcons[iconFor.orderKey]?.url ?? ''}
+          onSave={async (url) => {
+            setGroupIcons((await api.setGroupIcon(iconFor.orderKey, url).catch(handleSubmitError)).groupIcons)
+          }}
+          onClose={() => setIconFor(null)}
+        />
+      )}
+
       {naming && (
         <FolderNameModal
           initial={naming.folder.name}
@@ -870,13 +890,15 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
  * Containers of a compose project become one stack entry (services sorted by name), standalone
  * containers in a folder one folder entry (in the order they were added); the others stay single.
  * `emptyStacks`: managed stacks to show even with no container. `colors`: colors chosen for
- * stacks (the others get one from their name). Folders with no container in `list` are left out.
+ * stacks (the others get one from their name). `icons`: custom icons of stacks and folders.
+ * Folders with no container in `list` are left out.
  */
 function groupItems(
   list: ContainerInfo[],
   emptyStacks: string[],
   colors: Record<string, string> = {},
   folders: ContainerFolder[] = [],
+  icons: Record<string, GroupIcon> = {},
 ): ListItem[] {
   const items: ListItem[] = []
   const stacks = new Map<string, StackGroup>()
@@ -908,6 +930,7 @@ function groupItems(
       stacks.set(name, { kind: 'stack', id: name, name, orderKey: `stack:${name}`, managed: true, containers: [], color: stackColor(name, colors[name]) })
     }
   }
+  for (const g of [...stacks.values(), ...folderGroups.values()]) g.icon = icons[g.orderKey]?.icon
   for (const g of stacks.values()) {
     g.containers.sort((a, b) => a.name.localeCompare(b.name))
     items.push({ kind: 'stack', key: g.orderKey, stack: g })

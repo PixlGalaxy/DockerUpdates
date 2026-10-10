@@ -27,7 +27,7 @@ import { loadSettings, publicSettings, updateSettings } from './settings.js';
 import { getStackColors, setStackColor } from './stackColors.js';
 import { getStack, listStacks } from './stacks.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
-import { iconFile, initIcons, resetAutoIcon } from './icons.js';
+import { groupIcons, iconFile, initIcons, resetAutoIcon, setGroupIcon } from './icons.js';
 import {
   auditLog,
   isSameOrigin,
@@ -95,10 +95,17 @@ app.get('/api/containers', handle(async () => ({
   stacks: await listStacks(),
   stackColors: await getStackColors(),
   folders: await getFolders(),
+  // Icons of stacks and folders ("stack:<project>" / "folder:<id>" -> { url, icon })
+  groupIcons: await groupIcons(),
   order: await getOrder(),
 })));
 // Custom order of the list (lock button): body { names: string[] }
 app.put('/api/containers/order', handle(async (req) => ({ order: await saveOrder(req.body?.names) })));
+// Icon of a stack or folder (:key = "stack:<project>" / "folder:<id>"): body { url } ('' removes it)
+app.put('/api/groups/:key/icon', handle(async (req) => {
+  await setGroupIcon(req.params.key, req.body?.url ?? '');
+  return { groupIcons: await groupIcons() };
+}));
 // Folders of containers: body { folders: [{ id, name, color?, containers: string[] }] } (the whole list)
 app.put('/api/folders', handle(async (req) => ({ folders: await saveFolders(req.body?.folders) })));
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));

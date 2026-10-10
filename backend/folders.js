@@ -1,5 +1,6 @@
 // Folders of containers on the home page (created by dropping a container on another while the
 // order is unlocked), persisted in DATA_DIR/folders.json. Stored by container name, like the order.
+import { setGroupIcon } from './icons.js';
 import { readJson, writeJson } from './store.js';
 import { STACK_COLORS } from './stackColors.js';
 
@@ -44,8 +45,13 @@ export async function getFolders() {
 
 /** Replaces every folder (the UI sends the whole list); folders left empty are dropped. */
 export async function saveFolders(list) {
+  const before = await getFolders();
   folders = clean(list);
   await writeJson(FILE, folders);
+  // The icon of a folder that went away (ungrouped, or left empty) goes with it
+  for (const f of before) {
+    if (!folders.some((n) => n.id === f.id)) await setGroupIcon(`folder:${f.id}`, '').catch(() => {});
+  }
   return folders;
 }
 

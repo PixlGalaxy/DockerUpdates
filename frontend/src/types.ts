@@ -79,6 +79,12 @@ export interface StackRef {
   managed: boolean
 }
 
+/** Custom icon of a stack or folder: the URL as typed, and the cached file to show */
+export interface GroupIcon {
+  url: string
+  icon?: string
+}
+
 /** Folder of standalone containers (created by dropping a container on another) */
 export interface ContainerFolder {
   id: string
@@ -159,6 +165,8 @@ export interface ContainersResponse {
   stackColors: Record<string, string>
   /** Folders of standalone containers */
   folders: ContainerFolder[]
+  /** Icons of stacks and folders ("stack:<project>" / "folder:<id>") */
+  groupIcons: Record<string, GroupIcon>
   /** Custom order of the list (container names and "stack:<name>", first shown first); others go after, A-Z */
   order: string[]
 }

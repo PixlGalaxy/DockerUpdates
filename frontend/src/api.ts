@@ -2,6 +2,7 @@ import type {
   BulkSummary,
   CheckResult,
   ContainerFolder,
+  GroupIcon,
   ContainerStats,
   CheckSummary,
   ContainerAction,
@@ -84,6 +85,12 @@ export const api = {
   list: () => request<ContainersResponse>('/api/containers'),
   saveOrder: (names: string[]) =>
     request<{ order: string[] }>('/api/containers/order', { method: 'PUT', body: JSON.stringify({ names }) }),
+  /** key: "stack:<project>" / "folder:<id>"; url '' removes the icon */
+  setGroupIcon: (key: string, url: string) =>
+    request<{ groupIcons: Record<string, GroupIcon> }>(`/api/groups/${encodeURIComponent(key)}/icon`, {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
   saveFolders: (folders: ContainerFolder[]) =>
     request<{ folders: ContainerFolder[] }>('/api/folders', { method: 'PUT', body: JSON.stringify({ folders }) }),
   stats: () => request<Record<string, ContainerStats>>('/api/stats'),
