@@ -52,6 +52,8 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
 const td = 'px-3 py-3.5 align-middle'
 // Volume mappings collapse into "+N more" only when they would make the row taller than this
 const VOLUMES_MAX_PX = 64
+// Port lists longer than this show PORTS_MAX - 1 lines plus a "+N more" toggle
+const PORTS_MAX = 4
 
 const HEALTH = {
   healthy: { label: 'Healthy', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
@@ -120,6 +122,8 @@ export default function ContainerRow({
   const { repo } = splitImage(c.image)
   const hostNet = c.network === 'host'
   const published = c.ports.filter((p) => p.hostPort)
+  // Shared by both port columns so they expand and collapse together
+  const [portsOpen, setPortsOpen] = useState(false)
 
   const openMenuHere = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -190,11 +194,16 @@ export default function ContainerRow({
         ) : c.ports.length === 0 ? (
           <span className="text-muted">—</span>
         ) : (
-          c.ports.map((p) => (
-            <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
-              {p.containerPort}:{p.protocol.toUpperCase()}
-            </div>
-          ))
+          <PortList
+            items={c.ports}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
+                {p.containerPort}:{p.protocol.toUpperCase()}
+              </div>
+            )}
+          />
         )}
       </td>
 
@@ -205,25 +214,30 @@ export default function ContainerRow({
         ) : published.length === 0 ? (
           <span className="text-muted">—</span>
         ) : (
-          published.map((p) => (
-            <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
-              {p.protocol === 'tcp' ? (
-                <a
-                  href={`http://${hostIp}:${p.hostPort}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
-                >
-                  {hostIp}:{p.hostPort}
-                  <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
-                </a>
-              ) : (
-                <span>
-                  {hostIp}:{p.hostPort}
-                </span>
-              )}
-            </div>
-          ))
+          <PortList
+            items={published}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
+                {p.protocol === 'tcp' ? (
+                  <a
+                    href={`http://${hostIp}:${p.hostPort}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
+                  >
+                    {hostIp}:{p.hostPort}
+                    <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
+                  </a>
+                ) : (
+                  <span>
+                    {hostIp}:{p.hostPort}
+                  </span>
+                )}
+              </div>
+            )}
+          />
         )}
       </td>
 
@@ -601,6 +615,36 @@ function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerI
     </div>
   ) : (
     <span className="text-xs text-muted">—</span>
+  )
+}
+
+/** Port lines cut to PORTS_MAX - 1 with a "+N more" toggle when the list is longer than PORTS_MAX. */
+function PortList<T>({
+  items,
+  expanded,
+  onToggle,
+  render,
+}: {
+  items: T[]
+  expanded: boolean
+  onToggle: () => void
+  render: (item: T) => ReactNode
+}) {
+  const hidden = items.length > PORTS_MAX ? items.length - (PORTS_MAX - 1) : 0
+  return (
+    <>
+      {(expanded || !hidden ? items : items.slice(0, PORTS_MAX - 1)).map(render)}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mt-1 inline-flex items-center gap-1 font-sans text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          {expanded ? 'Show less' : `+${hidden} more`}
+          <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+    </>
   )
 }
 
