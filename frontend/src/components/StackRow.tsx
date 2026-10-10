@@ -120,7 +120,16 @@ function StackAutostart({ stack, busy, onAutostart }: { stack: StackGroup; busy:
 }
 
 function StackBadges({ stack }: { stack: StackGroup }) {
-  if (stack.kind === 'folder') return null
+  if (stack.kind === 'folder') {
+    return (
+      <span
+        className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-700 uppercase dark:text-sky-300"
+        title="Folder of containers: unlock the order to drag containers in or out of it"
+      >
+        Folder
+      </span>
+    )
+  }
   return stack.managed ? (
     <span
       className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-300"
