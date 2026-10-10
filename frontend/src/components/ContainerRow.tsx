@@ -17,7 +17,7 @@ import {
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { StackColor } from '../stackColors'
 import type { ContainerInfo, PortMapping, VolumeMapping } from '../types'
-import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
+import { formatBytes, gradientFor, isActive, MERGE_TARGET, splitImage, timeAgo } from '../utils'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
 
 interface Props {
@@ -39,8 +39,10 @@ interface Props {
   dragging?: boolean
   /** Cores of the Docker host (scale of the CPU bar) */
   hostCpus?: number
-  /** Service shown inside its compose stack group (that stack's color): indented, moves with the stack */
+  /** Shown inside a stack or folder (its color): indented, moves with its group */
   nested?: StackColor
+  /** Inside this folder (id): while reordering it can be dragged on its own, in or out of the folder */
+  folderId?: string
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -121,6 +123,7 @@ export default function ContainerRow({
   dragging,
   hostCpus,
   nested,
+  folderId,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -133,14 +136,15 @@ export default function ContainerRow({
 
   return (
     <tr
-      data-order-id={nested ? undefined : c.name}
+      data-order-id={nested && !folderId ? undefined : c.name}
+      data-folder={folderId}
       onContextMenu={(e) => {
         // Keep the native menu on links and text fields
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${nested ? nested.row : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
+      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${MERGE_TARGET} ${nested ? nested.row : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
     >
       {/* Application */}
       <td className={`${td} ${nested ? 'relative pl-7' : ''}`}>
@@ -236,6 +240,7 @@ export function ContainerCard({
   dragging,
   hostCpus,
   nested,
+  folderId,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -250,13 +255,14 @@ export function ContainerCard({
 
   return (
     <article
-      data-order-id={nested ? undefined : c.name}
+      data-order-id={nested && !folderId ? undefined : c.name}
+      data-folder={folderId}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group overflow-hidden rounded-2xl border bg-surface shadow-sm ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 bg-rose-500/5 shadow-none [&>*]:opacity-30' : 'border-line'}`}
+      className={`group overflow-hidden rounded-2xl border bg-surface shadow-sm ${MERGE_TARGET} ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 bg-rose-500/5 shadow-none [&>*]:opacity-30' : 'border-line'}`}
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         {grip}

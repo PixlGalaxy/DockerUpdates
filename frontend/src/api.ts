@@ -1,6 +1,7 @@
 import type {
   BulkSummary,
   CheckResult,
+  ContainerFolder,
   ContainerStats,
   CheckSummary,
   ContainerAction,
@@ -83,6 +84,8 @@ export const api = {
   list: () => request<ContainersResponse>('/api/containers'),
   saveOrder: (names: string[]) =>
     request<{ order: string[] }>('/api/containers/order', { method: 'PUT', body: JSON.stringify({ names }) }),
+  saveFolders: (folders: ContainerFolder[]) =>
+    request<{ folders: ContainerFolder[] }>('/api/folders', { method: 'PUT', body: JSON.stringify({ folders }) }),
   stats: () => request<Record<string, ContainerStats>>('/api/stats'),
   action: (id: string, action: ContainerAction) =>
     post<Ok>(`/api/containers/${id}/${action}`),

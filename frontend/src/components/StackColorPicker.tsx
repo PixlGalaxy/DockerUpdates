@@ -5,19 +5,22 @@ import { STACK_COLORS, stackColor } from '../stackColors'
 interface Props {
   x: number
   y: number
-  stack: string
-  /** Color chosen for the stack (undefined = automatic, from its name) */
+  /** Shown name of the stack / folder */
+  name: string
+  /** What the automatic color is picked from (stack name, folder id) */
+  seed: string
+  /** Color chosen (undefined = automatic) */
   chosen?: string
   /** null = back to the automatic color */
   onPick: (color: string | null) => void
   onClose: () => void
 }
 
-/** Popover with the stack colors, opened from the stack menu at the same place. */
-export default function StackColorPicker({ x, y, stack, chosen, onPick, onClose }: Props) {
+/** Popover with the colors of a stack or folder, opened from its menu at the same place. */
+export default function StackColorPicker({ x, y, name, seed, chosen, onPick, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: x, top: y })
-  const current = stackColor(stack, chosen)
+  const current = stackColor(seed, chosen)
 
   // Stays on screen, like the context menu
   useLayoutEffect(() => {
@@ -61,13 +64,13 @@ export default function StackColorPicker({ x, y, stack, chosen, onPick, onClose 
       <div
         ref={ref}
         role="dialog"
-        aria-label={`Color of the stack ${stack}`}
+        aria-label={`Color of ${name}`}
         style={pos}
         className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-surface p-3 shadow-2xl shadow-black/20 animate-[pop-in_.12s_ease-out]"
       >
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-muted">
           <Palette size={14} />
-          <span className="truncate">Color of {stack}</span>
+          <span className="truncate">Color of {name}</span>
         </div>
         <div className="grid grid-cols-5 gap-2.5">
           {STACK_COLORS.map((c) => {

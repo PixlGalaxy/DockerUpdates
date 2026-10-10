@@ -18,6 +18,7 @@ import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import { startOperation, streamOperation } from './operations.js';
+import { getFolders, saveFolders } from './folders.js';
 import { getOrder, saveOrder } from './order.js';
 import { cpuLayout, detectCpuLayout } from './cpuLayout.js';
 import * as scheduler from './scheduler.js';
@@ -93,10 +94,13 @@ app.get('/api/containers', handle(async () => ({
   // Managed compose stacks (also the ones with no container right now)
   stacks: await listStacks(),
   stackColors: await getStackColors(),
+  folders: await getFolders(),
   order: await getOrder(),
 })));
 // Custom order of the list (lock button): body { names: string[] }
 app.put('/api/containers/order', handle(async (req) => ({ order: await saveOrder(req.body?.names) })));
+// Folders of containers: body { folders: [{ id, name, color?, containers: string[] }] } (the whole list)
+app.put('/api/folders', handle(async (req) => ({ folders: await saveFolders(req.body?.folders) })));
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));
 // Live CPU / memory, polled every second by the UI
 app.get('/api/stats', handle(() => dk.getStats()));

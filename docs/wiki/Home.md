@@ -11,6 +11,7 @@ DockerUpdates is a self-hosted web dashboard to manage the Docker containers of 
 | [Installation](Installation.md) | Requirements, `docker run`, Docker Compose, Unraid, first sign-in, updating |
 | [Configuration](Configuration.md) | Every environment variable (`.env`), one by one, with examples |
 | [Settings](Settings.md) | Every option of the Settings page in the web UI |
+| [Container list](Container-List.md) | The home page: actions, custom order, folders |
 | [Automatic updates](Automatic-Updates.md) | Update checks, schedules, cooldown, per-container rules |
 | [Notifications](Notifications.md) | Discord, Telegram, ntfy and signed webhooks |
 | [Reverse proxy](Reverse-Proxy.md) | Nginx Proxy Manager, HTTPS, `TRUST_PROXY`, `COOKIE_SECURE` |

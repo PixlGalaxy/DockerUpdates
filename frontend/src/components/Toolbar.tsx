@@ -76,7 +76,12 @@ export function TopBar({
 
       <div className="ml-auto flex items-center gap-1 text-xs text-muted">
         {orderUnlocked ? (
-          <span className="font-medium text-rose-600 dark:text-rose-400">Hold and drag a container to move it, then lock to save</span>
+          <span
+            className="font-medium text-rose-600 dark:text-rose-400"
+            title="Drag a container in or out of a folder to add or remove it. Hold it over another container for a second to make a folder."
+          >
+            Drag to move · hold over a container to make a folder · lock to save
+          </span>
         ) : (
           <span className="hidden sm:inline">Right-click a container for more actions</span>
         )}

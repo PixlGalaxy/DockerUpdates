@@ -1,14 +1,24 @@
-import { ChevronRight, CircleCheck, CircleDashed, CloudDownload, EllipsisVertical, Layers } from 'lucide-react'
+import { ChevronRight, CircleCheck, CircleDashed, CloudDownload, EllipsisVertical, Folder, Layers } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 import type { StackColor } from '../stackColors'
 import type { ContainerInfo } from '../types'
+import { MERGE_TARGET } from '../utils'
 import { PortCells, Resources } from './ContainerRow'
 import { Button, IconButton, Toggle } from './ui'
 
-/** A compose stack in the container list: its services are shown below it */
+/**
+ * A group in the container list, shown as one row with its containers below it: a compose stack,
+ * or a folder of standalone containers made by the user.
+ */
 export interface StackGroup {
+  kind: 'stack' | 'folder'
+  /** Stack: compose project name. Folder: its id */
+  id: string
+  /** Shown name: the project, or the folder name */
   name: string
-  /** Its compose file lives in DockerUpdates (else it was started elsewhere) */
+  /** Order id: "stack:<project>" / "folder:<id>" */
+  orderKey: string
+  /** Stack whose compose file lives in DockerUpdates (else it was started elsewhere) */
   managed: boolean
   containers: ContainerInfo[]
   color: StackColor
@@ -33,6 +43,8 @@ interface Props {
 }
 
 /** Running / total services and the services with an update, for the stack header. */
+const unit = (stack: StackGroup, n: number) => `${stack.kind === 'stack' ? 'service' : 'container'}${n === 1 ? '' : 's'}`
+
 function stackSummary(stack: StackGroup) {
   const running = stack.containers.filter((c) => c.state === 'running').length
   const updates = stack.containers.filter((c) => c.updateStatus === 'update-available')
@@ -64,9 +76,9 @@ function StackUsage({ stack, hostCpus, wide }: { stack: StackGroup; hostCpus?: n
   return usage ? <Resources container={usage} hostCpus={hostCpus} wide={wide} /> : <span className="text-xs text-muted">—</span>
 }
 
-const stackIcon = (color: StackColor) => (
-  <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${color.icon}`}>
-    <Layers size={20} />
+const stackIcon = (stack: StackGroup) => (
+  <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${stack.color.icon}`}>
+    {stack.kind === 'stack' ? <Layers size={20} /> : <Folder size={20} />}
   </span>
 )
 
@@ -93,7 +105,7 @@ function StackAutostart({ stack, busy, onAutostart }: { stack: StackGroup; busy:
   return (
     <span className="inline-flex items-center gap-1.5">
       <Toggle
-        label={mixed ? `Autostart on for ${on} of ${total} services: turn it on for all` : `Autostart for every service of ${stack.name}`}
+        label={mixed ? `Autostart on for ${on} of ${total} ${unit(stack, total)}: turn it on for all` : `Autostart for every ${unit(stack, 1)} of ${stack.name}`}
         checked={on === total}
         disabled={busy}
         onChange={onAutostart}
@@ -108,6 +120,7 @@ function StackAutostart({ stack, busy, onAutostart }: { stack: StackGroup; busy:
 }
 
 function StackBadges({ stack }: { stack: StackGroup }) {
+  if (stack.kind === 'folder') return null
   return stack.managed ? (
     <span
       className="rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-300"
@@ -133,7 +146,7 @@ function StackStatus({ stack }: { stack: StackGroup }) {
       <span className={`size-2 rounded-full ${dot}`} />
       {total === 0
         ? 'Not deployed'
-        : `${total} service${total === 1 ? '' : 's'} · ${running === total ? 'all running' : `${running}/${total} running`}`}
+        : `${total} ${unit(stack, total)} · ${running === total ? 'all running' : `${running}/${total} running`}`}
     </span>
   )
 }
@@ -150,7 +163,7 @@ function StackUpdate({ stack, busy, onUpdate }: { stack: StackGroup; busy: boole
         onClick={onUpdate}
         title={`Update ${updates.map((c) => c.name).join(', ')}`}
       >
-        Update stack
+        {stack.kind === 'stack' ? 'Update stack' : 'Update folder'}
         <span className="rounded-full bg-white/25 px-1.5 text-[11px] tabular-nums">{updates.length}</span>
       </Button>
     )
@@ -177,12 +190,12 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
   const td = 'px-3 py-3.5 align-middle'
   return (
     <tr
-      data-order-id={`stack:${stack.name}`}
+      data-order-id={stack.orderKey}
       onContextMenu={(e) => {
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`border-t border-line ${stack.color.header} ${busy ? 'opacity-70' : ''} ${dragging ? 'outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
+      className={`border-t border-line ${stack.color.header} ${stack.kind === 'folder' ? MERGE_TARGET : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
     >
       {/* Application */}
       <td className={td}>
@@ -192,11 +205,11 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
             type="button"
             onClick={onToggle}
             aria-expanded={!collapsed}
-            aria-label={`${collapsed ? 'Show' : 'Hide'} the services of ${stack.name}`}
+            aria-label={`${collapsed ? 'Show' : 'Hide'} the ${unit(stack, 2)} of ${stack.name}`}
             className="-mr-1 flex items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-sky-500"
           >
             <ChevronRight size={16} className={`-ml-1 text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-            {stackIcon(stack.color)}
+            {stackIcon(stack)}
           </button>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -235,7 +248,7 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
 
       {/* Uptime column: stack actions */}
       <td className={`${td} text-right`}>
-        <IconButton label={`Stack actions for ${stack.name}`} onClick={(e) => openBelow(e, onMenu, true)}>
+        <IconButton label={`${stack.kind === 'stack' ? 'Stack' : 'Folder'} actions for ${stack.name}`} onClick={(e) => openBelow(e, onMenu, true)}>
           <EllipsisVertical size={16} />
         </IconButton>
       </td>
@@ -247,20 +260,20 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
 export function StackCard({ stack, hostCpus, collapsed, busy, onToggle, onMenu, onUpdate, onAutostart, grip, dragging, children }: Props & { children: ReactNode }) {
   return (
     <section
-      data-order-id={`stack:${stack.name}`}
-      className={`overflow-hidden rounded-2xl border shadow-sm ${stack.color.header} ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 [&>*]:opacity-30' : stack.color.border}`}
+      data-order-id={stack.orderKey}
+      className={`overflow-hidden rounded-2xl border shadow-sm ${stack.color.header} ${stack.kind === 'folder' ? MERGE_TARGET : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 [&>*]:opacity-30' : stack.color.border}`}
     >
       <div className="flex items-center gap-2 p-3">
         {grip}
         <button type="button" onClick={onToggle} aria-expanded={!collapsed} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
           <ChevronRight size={16} className={`shrink-0 text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-          {stackIcon(stack.color)}
+          {stackIcon(stack)}
           <span className="min-w-0">
             <span className="block truncate font-semibold">{stack.name}</span>
             <StackStatus stack={stack} />
           </span>
         </button>
-        <IconButton label={`Stack actions for ${stack.name}`} onClick={(e) => openBelow(e, onMenu, true)}>
+        <IconButton label={`${stack.kind === 'stack' ? 'Stack' : 'Folder'} actions for ${stack.name}`} onClick={(e) => openBelow(e, onMenu, true)}>
           <EllipsisVertical size={16} />
         </IconButton>
       </div>

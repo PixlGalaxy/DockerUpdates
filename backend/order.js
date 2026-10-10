@@ -1,10 +1,10 @@
 // Custom order of the containers on the home page (set with the lock button), persisted in
 // DATA_DIR/container-order.json. Stored by name: container IDs change on every update.
-// Compose stacks move as one block, stored as "stack:<project>".
+// Compose stacks and folders move as one block, stored as "stack:<project>" / "folder:<id>".
 import { readJson, writeJson } from './store.js';
 
 const FILE = 'container-order.json';
-const NAME_RE = /^(stack:)?[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const NAME_RE = /^(stack:|folder:)?[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const MAX = 2000;
 
 let order = null;

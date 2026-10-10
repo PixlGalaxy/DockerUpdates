@@ -36,6 +36,7 @@
 - **Compose stacks**: deploy a `docker-compose` file from **Add compose** (with an optional `.env`), edit and redeploy it, and update its services with `docker compose pull` + `up -d`. Stacks started elsewhere are grouped too. Each stack shows the CPU, RAM and ports of all its services, an autostart switch and a color you pick with a right-click
 - **Dedicated LAN IPs (macvlan / ipvlan)**: enable it once in Settings (the server network is detected automatically, nothing to run on the host), then give containers a fixed IP with an availability check
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
+- **Custom order and folders**: unlock the list to drag containers into place; hold one over another for a second to make a folder (like app icons on a phone) and drag containers in or out of it; name it, pick its color, update or start / stop it as one
 - **Icons**: custom icon URL per image, or the app's favicon discovered automatically
 - **Admin Panel**: active sessions (sign out any browser), failed logins, live server logs with the audit trail, login lockouts you can lift, an IP / CIDR ban list, and system information (app, image, Docker engine, data volume)
 - **Secure by default**: login, revocable sessions, brute-force lockout with limits editable in Settings, strict same-origin API, CSP and security headers, audit log ([SECURITY.md](SECURITY.md))

@@ -6,6 +6,7 @@
 - [Settings](Settings.md)
 
 **Features**
+- [Container list](Container-List.md)
 - [Automatic updates](Automatic-Updates.md)
 - [Notifications](Notifications.md)
 - [Private registries](Private-Registries.md)

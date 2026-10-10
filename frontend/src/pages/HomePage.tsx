@@ -3,6 +3,8 @@ import {
   Copy,
   ExternalLink,
   FileDown,
+  FolderMinus,
+  FolderX,
   Globe,
   History,
   ImageIcon,
@@ -28,6 +30,7 @@ import LogsModal from '../components/LogsModal'
 import StatsCards, { type Filter } from '../components/StatsCards'
 import BackgroundUpdate from '../components/BackgroundUpdate'
 import UpdateProgressModal from '../components/UpdateProgressModal'
+import FolderNameModal from '../components/FolderNameModal'
 import StackColorPicker from '../components/StackColorPicker'
 import StackFormModal from '../components/StackFormModal'
 import type { StackGroup } from '../components/StackRow'
@@ -37,6 +40,7 @@ import { useStoredState } from '../hooks'
 import type {
   BulkSummary,
   CheckResult,
+  ContainerFolder,
   CheckSummary,
   ContainerAction,
   ContainerInfo,
@@ -97,12 +101,16 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [stackMenu, setStackMenu] = useState<{ stack: StackGroup; x: number; y: number } | null>(null)
   const [busyStacks, setBusyStacks] = useState<Set<string>>(new Set())
   const [stackColors, setStackColors] = useState<Record<string, string>>({})
-  const [colorPicker, setColorPicker] = useState<{ stack: string; x: number; y: number } | null>(null)
+  const [colorPicker, setColorPicker] = useState<{ group: StackGroup; x: number; y: number } | null>(null)
+  // Folders of standalone containers, and the folder being named (`created`: just made)
+  const [folders, setFolders] = useState<ContainerFolder[]>([])
+  const [naming, setNaming] = useState<{ folder: ContainerFolder; created: boolean } | null>(null)
   const [collapsedList, setCollapsedList] = useStoredState<string[]>('du:collapsed-stacks', [])
   const collapsed = useMemo(() => new Set(collapsedList), [collapsedList])
   // Custom order saved on the server, and the order being edited while the lock is open
   const [order, setOrder] = useState<string[]>([])
-  const [draftOrder, setDraftOrder] = useState<string[] | null>(null)
+  // While the lock is open: the order and the folders being edited, saved together when it closes
+  const [draft, setDraft] = useState<Draft | null>(null)
   const [savingOrder, setSavingOrder] = useState(false)
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
   // Containers whose update check is running (spins their check button)
@@ -132,6 +140,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       setContainers(data.containers)
       setStacks(data.stacks ?? [])
       setStackColors(data.stackColors ?? {})
+      setFolders(data.folders ?? [])
       setOrder(data.order ?? [])
       setHostIp(data.hostIp)
       onHost(data.hostIp, data.hostName)
@@ -313,7 +322,119 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
     }
   }
 
+  /** Shows the folders at once, then saves them (reverts if the server refuses) */
+  async function saveFolders(next: ContainerFolder[]) {
+    const before = folders
+    setFolders(next)
+    try {
+      setFolders((await api.saveFolders(next)).folders)
+    } catch (err) {
+      setFolders(before)
+      onError(err)
+    }
+  }
+
+  const folderOf = (name: string) => folders.find((f) => f.containers.includes(name))
+  const folderById = (group: StackGroup) => folders.find((f) => `folder:${f.id}` === group.id)
+
+  /**
+   * Container `name` dropped on `into` while reordering: on another container, both make a new
+   * folder in that container's place (then it is named); on a folder, it joins it at the end.
+   * Only in the draft: saved when the lock closes.
+   */
+  function merge(name: string, into: string) {
+    const folder: ContainerFolder | null = into.startsWith('folder:')
+      ? null
+      : { id: Math.random().toString(36).slice(2, 10), name: 'New folder', containers: [into, name] }
+    setDraft((d) => {
+      if (!d) return d
+      const without = d.folders.map((f) => ({ ...f, containers: f.containers.filter((n) => n !== name) }))
+      if (!folder) {
+        return {
+          order: d.order.filter((k) => k !== name),
+          folders: without.map((f) => (`folder:${f.id}` === into ? { ...f, containers: [...f.containers, name] } : f)),
+        }
+      }
+      return {
+        order: d.order.filter((k) => k !== name).map((k) => (k === into ? `folder:${folder.id}` : k)),
+        folders: [...without, folder],
+      }
+    })
+    if (folder) setNaming({ folder, created: true })
+  }
+
+  /** Takes containers out of a folder (its menu); they keep its place in the order. Empty folders go away. */
+  async function leaveFolder(folder: ContainerFolder, names: string[]) {
+    const key = `folder:${folder.id}`
+    const place = (list: string[]) => {
+      const at = list.indexOf(key)
+      const rest = list.filter((k) => !names.includes(k))
+      return at === -1 ? [...rest, ...names] : [...rest.slice(0, at + 1), ...names, ...rest.slice(at + 1)]
+    }
+    const left = folder.containers.filter((n) => !names.includes(n))
+    await saveFolders(left.length ? folders.map((f) => (f.id === folder.id ? { ...f, containers: left } : f)) : folders.filter((f) => f.id !== folder.id))
+    try {
+      setOrder((await api.saveOrder(place(order).filter((k) => left.length || k !== key))).order)
+    } catch (err) {
+      onError(err)
+    }
+  }
+
+  /** Same action on every container of a folder (DockerUpdates itself is never stopped / paused) */
+  const folderAction = (group: StackGroup, a: ContainerAction) =>
+    withStack(
+      group.id,
+      async () => {
+        const targets = group.containers.filter((c) => !(c.isSelf && a !== 'start' && a !== 'restart'))
+        const results = await Promise.allSettled(targets.map((c) => api.action(c.id, a)))
+        return { affected: results.filter((r) => r.status === 'fulfilled').length, failed: results.filter((r) => r.status === 'rejected').length }
+      },
+      (r) => toast(r.failed ? 'error' : 'success', `${group.name}: ${r.affected} ${ACTION_DONE[a]}${r.failed ? `, ${r.failed} failed` : ''}`),
+    )
+
+  function folderMenuItems(group: StackGroup, x: number, y: number): MenuItem[] {
+    const folder = folderById(group)
+    const ids = group.containers.filter((c) => c.updateStatus === 'update-available').map((c) => c.id)
+    const anyActive = group.containers.some(isActive)
+    return [
+      { label: `Update folder (${ids.length})`, icon: <CloudDownload size={15} />, hidden: ids.length === 0, onSelect: () => void startUpdate(ids) },
+      {
+        label: 'Check for updates',
+        icon: <RefreshCw size={15} />,
+        onSelect: () =>
+          void withStack(
+            group.id,
+            async () => {
+              const s: CheckSummary = { upToDate: 0, available: 0, authRequired: 0, failed: 0, local: 0 }
+              // One by one, like "Check for updates": registries rate-limit parallel pulls
+              for (const c of group.containers.filter((c) => c.updateStatus !== 'local')) {
+                const r = await api.checkUpdate(c.id).catch(() => ({ status: 'error' as const }))
+                if (r.status === 'up-to-date') s.upToDate++
+                else if (r.status === 'update-available') s.available++
+                else if (r.status === 'auth-required') s.authRequired++
+                else s.failed++
+              }
+              return s
+            },
+            reportCheckAll,
+          ),
+      },
+      { label: 'Start all', icon: <Play size={15} />, separatorBefore: true, hidden: group.containers.every(isActive), onSelect: () => void folderAction(group, 'start') },
+      { label: 'Stop all', icon: <Square size={15} />, hidden: !anyActive, onSelect: () => void folderAction(group, 'stop') },
+      { label: 'Restart all', icon: <RotateCw size={15} />, hidden: !anyActive, onSelect: () => void folderAction(group, 'restart') },
+      { label: 'Rename folder', icon: <Pencil size={15} />, separatorBefore: true, onSelect: () => folder && setNaming({ folder, created: false }) },
+      { label: 'Select color', icon: <Palette size={15} />, onSelect: () => setColorPicker({ group, x, y }) },
+      {
+        label: 'Ungroup folder',
+        icon: <FolderX size={15} />,
+        separatorBefore: true,
+        onSelect: () => folder && void leaveFolder(folder, folder.containers),
+      },
+    ]
+  }
+
   function stackMenuItems(st: StackGroup, x: number, y: number): MenuItem[] {
+    if (st.kind === 'folder') return folderMenuItems(st, x, y)
     const ids = st.containers.filter((c) => c.updateStatus === 'update-available').map((c) => c.id)
     const anyActive = st.containers.some(isActive)
     const hasSelf = st.containers.some((c) => c.isSelf)
@@ -336,7 +457,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         label: 'Select color',
         icon: <Palette size={15} />,
         separatorBefore: true,
-        onSelect: () => setColorPicker({ stack: st.name, x, y }),
+        onSelect: () => setColorPicker({ group: st, x, y }),
       },
       {
         label: st.managed ? 'Edit compose file' : 'Edit compose file (external)',
@@ -387,6 +508,12 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       { label: 'Check for update', icon: <RefreshCw size={15} />, hidden: c.updateStatus === 'local', separatorBefore: c.isSelf, onSelect: () => void checkUpdate(c.id) },
       { label: 'Force update', icon: <CloudDownload size={15} />, hidden: c.updateStatus === 'local', onSelect: () => void startUpdate([c.id]) },
       { label: 'Update history', icon: <History size={15} />, onSelect: () => setPanel({ kind: 'history', container: c }) },
+      {
+        label: `Remove from ${folderOf(c.name)?.name ?? 'folder'}`,
+        icon: <FolderMinus size={15} />,
+        hidden: Boolean(c.stack) || !folderOf(c.name),
+        onSelect: () => void leaveFolder(folderOf(c.name)!, [c.name]),
+      },
       { label: 'Export template', icon: <FileDown size={15} />, onSelect: () => void exportTemplate(c) },
       {
         label: 'Refresh icon',
@@ -426,7 +553,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
 
   const items = useMemo(() => {
     // Reordering: every container and stack, in the order being edited
-    if (draftOrder) return sortItems(groupItems(containers, stacks, stackColors), draftOrder)
+    if (draft) return sortItems(groupItems(containers, stacks, stackColors, draft.folders), draft.order)
     const q = search.trim().toLowerCase()
     const shown = containers
       .filter((c) => {
@@ -435,52 +562,52 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         if (filter === 'updates') return c.updateStatus === 'update-available'
         return true
       })
-      .filter((c) => !q || [c.name, c.image, c.ip ?? '', c.network, c.stack?.project ?? ''].some((v) => v.toLowerCase().includes(q)))
+      .filter((c) =>
+        !q ||
+        [c.name, c.image, c.ip ?? '', c.network, c.stack?.project ?? '', c.stack ? '' : (folders.find((f) => f.containers.includes(c.name))?.name ?? '')].some((v) =>
+          v.toLowerCase().includes(q),
+        ),
+      )
     // Managed stacks with no container (not deployed) only show in the unfiltered list
     const empty = filter === 'all' ? stacks.filter((s) => !q || s.includes(q)) : []
-    return sortItems(groupItems(shown, empty, stackColors), order)
-  }, [containers, stacks, stackColors, filter, search, order, draftOrder])
+    return sortItems(groupItems(shown, empty, stackColors, folders), order)
+  }, [containers, stacks, stackColors, folders, filter, search, order, draft])
 
-  /** Lock button: open = start reordering every container; closed again = save the order */
+  /** Lock button: open = start reordering every container; closed again = save the order and folders */
   async function toggleOrder() {
-    if (!draftOrder) {
+    if (!draft) {
       setSearch('')
       setFilter('all')
-      setDraftOrder(sortItems(groupItems(containers, stacks), order).map((i) => i.key))
+      setDraft({ order: sortItems(groupItems(containers, stacks, {}, folders), order).map((i) => i.key), folders })
       return
     }
-    const all = groupItems(containers, stacks)
-    const names = sortItems(all, draftOrder).map((i) => i.key)
-    const saved = sortItems(all, order)
-    if (names.every((n, i) => n === saved[i].key)) {
-      setDraftOrder(null)
+    // Folders left empty (every container moved out) go away
+    const nextFolders = draft.folders.filter((f) => f.containers.length > 0)
+    const names = sortItems(groupItems(containers, stacks, {}, nextFolders), draft.order).map((i) => i.key)
+    const saved = sortItems(groupItems(containers, stacks, {}, folders), order).map((i) => i.key)
+    const foldersChanged = JSON.stringify(nextFolders) !== JSON.stringify(folders)
+    const orderChanged = names.join('/') !== saved.join('/')
+    if (!foldersChanged && !orderChanged) {
+      setDraft(null)
       return
     }
     setSavingOrder(true)
     try {
-      setOrder((await api.saveOrder(names)).order)
-      setDraftOrder(null)
-      toast('success', 'Container order saved')
+      if (foldersChanged) setFolders((await api.saveFolders(nextFolders)).folders)
+      if (orderChanged) setOrder((await api.saveOrder(names)).order)
+      setDraft(null)
+      toast('success', foldersChanged ? 'Order and folders saved' : 'Container order saved')
     } catch (err) {
-      onError(err) // stays unlocked: the order can be saved again
+      onError(err) // stays unlocked: it can be saved again
     } finally {
       setSavingOrder(false)
     }
   }
 
-  /** Moves `name` to the place of `over` in the order being edited */
+  /** Moves `name` to the place of `over` in the draft, in or out of folders (see moveInDraft) */
   const reorder = useCallback(
     (name: string, over: string) =>
-      setDraftOrder((d) => {
-        if (!d) return d
-        const names = sortItems(groupItems(containers, stacks), d).map((i) => i.key)
-        const from = names.indexOf(name)
-        const to = names.indexOf(over)
-        if (from === -1 || to === -1) return d
-        names.splice(from, 1)
-        names.splice(to, 0, name)
-        return names
-      }),
+      setDraft((d) => d && moveInDraft(d, sortItems(groupItems(containers, stacks, {}, d.folders), d.order).map((i) => i.key), name, over)),
     [containers, stacks],
   )
 
@@ -505,7 +632,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         lastUpdated={lastUpdated}
         refreshing={refreshing}
         onRefresh={refresh}
-        orderUnlocked={draftOrder !== null}
+        orderUnlocked={draft !== null}
         orderSaving={savingOrder}
         onToggleOrder={() => void toggleOrder()}
       />
@@ -526,7 +653,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         onCheckUpdate={(id) => void checkUpdate(id)}
         onUpdate={(id) => void startUpdate([id])}
         onCopy={copy}
-        onReorder={draftOrder ? reorder : undefined}
+        onReorder={draft ? reorder : undefined}
+        onMerge={draft ? merge : undefined}
         collapsed={collapsed}
         busyStacks={busyStacks}
         onToggleStack={(name) =>
@@ -534,10 +662,17 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         }
         onStackMenu={(stack, x, y) => setStackMenu({ stack, x, y })}
         onStackAutostart={(stack, enabled) =>
-          void withStack(stack.name, () => api.setStackAutostart(stack.name, enabled), (r) =>
+          void withStack(
+            stack.id,
+            async () => {
+              if (stack.kind === 'stack') return api.setStackAutostart(stack.name, enabled)
+              const results = await Promise.allSettled(stack.containers.map((c) => api.setAutostart(c.id, enabled)))
+              return { affected: results.filter((r) => r.status === 'fulfilled').length, failed: results.filter((r) => r.status === 'rejected').length }
+            },
+            (r) =>
             toast(
               r.failed ? 'error' : 'success',
-              `Autostart ${enabled ? 'enabled' : 'disabled'} for ${r.affected} service${r.affected === 1 ? '' : 's'} of ${stack.name}${r.failed ? `, ${r.failed} failed` : ''}`,
+              `Autostart ${enabled ? 'enabled' : 'disabled'} for ${r.affected} ${stack.kind === 'stack' ? 'service' : 'container'}${r.affected === 1 ? '' : 's'} of ${stack.name}${r.failed ? `, ${r.failed} failed` : ''}`,
             ),
           )
         }
@@ -580,10 +715,29 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         <StackColorPicker
           x={colorPicker.x}
           y={colorPicker.y}
-          stack={colorPicker.stack}
-          chosen={stackColors[colorPicker.stack]}
-          onPick={(color) => void pickStackColor(colorPicker.stack, color)}
+          name={colorPicker.group.name}
+          seed={colorPicker.group.kind === 'stack' ? colorPicker.group.name : colorPicker.group.id}
+          chosen={colorPicker.group.kind === 'stack' ? stackColors[colorPicker.group.name] : folderById(colorPicker.group)?.color}
+          onPick={(color) => {
+            const g = colorPicker.group
+            if (g.kind === 'stack') return void pickStackColor(g.name, color)
+            void saveFolders(folders.map((f) => (`folder:${f.id}` === g.id ? { ...f, color: color ?? undefined } : f)))
+          }}
           onClose={() => setColorPicker(null)}
+        />
+      )}
+
+      {naming && (
+        <FolderNameModal
+          initial={naming.folder.name}
+          created={naming.created}
+          onSave={(name) => {
+            const rename = (list: ContainerFolder[]) => list.map((f) => (f.id === naming.folder.id ? { ...f, name } : f))
+            // A folder just made only exists in the draft until the lock closes
+            if (draft) setDraft((d) => d && { ...d, folders: rename(d.folders) })
+            else void saveFolders(rename(folders))
+          }}
+          onClose={() => setNaming(null)}
         />
       )}
 
@@ -688,38 +842,62 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
 }
 
 /**
- * Containers of a compose project become one stack entry (services sorted by name); the others
- * stay single. `emptyStacks`: managed stacks to show even with no container. `colors`: colors
- * chosen for stacks (the others get one from their name).
+ * Containers of a compose project become one stack entry (services sorted by name), standalone
+ * containers in a folder one folder entry (in the order they were added); the others stay single.
+ * `emptyStacks`: managed stacks to show even with no container. `colors`: colors chosen for
+ * stacks (the others get one from their name). Folders with no container in `list` are left out.
  */
-function groupItems(list: ContainerInfo[], emptyStacks: string[], colors: Record<string, string> = {}): ListItem[] {
+function groupItems(
+  list: ContainerInfo[],
+  emptyStacks: string[],
+  colors: Record<string, string> = {},
+  folders: ContainerFolder[] = [],
+): ListItem[] {
   const items: ListItem[] = []
-  const groups = new Map<string, StackGroup>()
+  const stacks = new Map<string, StackGroup>()
+  const inFolder = new Map(folders.flatMap((f) => f.containers.map((n) => [n, f] as const)))
+  const folderGroups = new Map<string, StackGroup>()
   for (const c of list) {
-    if (!c.stack) {
+    const folder = c.stack ? undefined : inFolder.get(c.name)
+    if (folder) {
+      let g = folderGroups.get(folder.id)
+      if (!g) {
+        g = { kind: 'folder', id: `folder:${folder.id}`, name: folder.name, orderKey: `folder:${folder.id}`, managed: false, containers: [], color: stackColor(`folder:${folder.id}`, folder.color) }
+        folderGroups.set(folder.id, g)
+      }
+      g.containers.push(c)
+    } else if (c.stack) {
+      const project = c.stack.project
+      let g = stacks.get(project)
+      if (!g) {
+        g = { kind: 'stack', id: project, name: project, orderKey: `stack:${project}`, managed: c.stack.managed, containers: [], color: stackColor(project, colors[project]) }
+        stacks.set(project, g)
+      }
+      g.containers.push(c)
+    } else {
       items.push({ kind: 'container', key: c.name, container: c })
-      continue
     }
-    let g = groups.get(c.stack.project)
-    if (!g) {
-      g = { name: c.stack.project, managed: c.stack.managed, containers: [], color: stackColor(c.stack.project, colors[c.stack.project]) }
-      groups.set(g.name, g)
-    }
-    g.containers.push(c)
   }
   for (const name of emptyStacks) {
-    if (!groups.has(name)) groups.set(name, { name, managed: true, containers: [], color: stackColor(name, colors[name]) })
+    if (!stacks.has(name)) {
+      stacks.set(name, { kind: 'stack', id: name, name, orderKey: `stack:${name}`, managed: true, containers: [], color: stackColor(name, colors[name]) })
+    }
   }
-  for (const g of groups.values()) {
+  for (const g of stacks.values()) {
     g.containers.sort((a, b) => a.name.localeCompare(b.name))
-    items.push({ kind: 'stack', key: `stack:${g.name}`, stack: g })
+    items.push({ kind: 'stack', key: g.orderKey, stack: g })
+  }
+  for (const [id, g] of folderGroups) {
+    const position = folders.find((f) => f.id === id)!.containers
+    g.containers.sort((a, b) => position.indexOf(a.name) - position.indexOf(b.name))
+    items.push({ kind: 'stack', key: g.orderKey, stack: g })
   }
   return items
 }
 
 /**
- * Entries in the saved order; the ones not in it (new) go after, alphabetically. A stack not
- * saved yet takes the place of its first service (the order from before it was grouped).
+ * Entries in the saved order; the ones not in it (new) go after, alphabetically. A stack or folder
+ * not saved yet takes the place of its first container (the order from before it was grouped).
  */
 function sortItems(items: ListItem[], order: string[]) {
   const rank = new Map(order.map((key, i) => [key, i]))
@@ -728,4 +906,50 @@ function sortItems(items: ListItem[], order: string[]) {
     (item.kind === 'stack' ? Math.min(...item.stack.containers.map((c) => rank.get(c.name) ?? Infinity)) : Infinity)
   const label = (item: ListItem) => (item.kind === 'stack' ? item.stack.name : item.container.name)
   return [...items].sort((a, b) => rankOf(a) - rankOf(b) || label(a).localeCompare(label(b)))
+}
+
+/** Order and folders being edited while the lock is open */
+interface Draft {
+  order: string[]
+  folders: ContainerFolder[]
+}
+
+/**
+ * Moves container or group `name` to the place of `over` (the row it was dragged past). `keys`:
+ * the top-level order ids as shown. A container passed over a container of a folder goes into
+ * that folder; one of a folder passed over anything outside it leaves the folder. Moving down,
+ * it goes after `over`; moving up, before it. Stacks and folders only move at the top level.
+ */
+function moveInDraft(d: Draft, keys: string[], name: string, over: string): Draft {
+  const folderOf = (n: string) => d.folders.find((f) => f.containers.includes(n))
+  const from = name.includes(':') ? undefined : folderOf(name)
+  let into = over.includes(':') ? undefined : folderOf(over)
+  // A stack or folder dragged over the containers of a folder moves past the whole folder
+  if (name.includes(':') && into) {
+    over = `folder:${into.id}`
+    into = undefined
+  }
+  // Where it is now, as a top-level position (a container in a folder counts as the folder)
+  const at = (k: string) => {
+    const f = k.includes(':') ? undefined : folderOf(k)
+    return keys.indexOf(f ? `folder:${f.id}` : k)
+  }
+
+  let folders = from ? d.folders.map((f) => (f.id === from.id ? { ...f, containers: f.containers.filter((n) => n !== name) } : f)) : d.folders
+  if (into) {
+    const list = folders.find((f) => f.id === into.id)!.containers
+    const down = from?.id === into.id ? into.containers.indexOf(name) < into.containers.indexOf(over) : at(name) < at(over)
+    const i = list.indexOf(over)
+    const next = [...list.slice(0, down ? i + 1 : i), name, ...list.slice(down ? i + 1 : i)]
+    folders = folders.map((f) => (f.id === into.id ? { ...f, containers: next } : f))
+    return { order: d.order.filter((k) => k !== name), folders }
+  }
+
+  const order = keys.filter((k) => k !== name)
+  const i = order.indexOf(over)
+  if (i === -1) return d
+  // Out of its folder over the folder itself: just above it
+  const down = from && over === `folder:${from.id}` ? false : at(name) < at(over)
+  order.splice(down ? i + 1 : i, 0, name)
+  return { order, folders }
 }

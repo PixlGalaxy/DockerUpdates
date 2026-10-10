@@ -79,6 +79,16 @@ export interface StackRef {
   managed: boolean
 }
 
+/** Folder of standalone containers (created by dropping a container on another) */
+export interface ContainerFolder {
+  id: string
+  name: string
+  /** Color id of the palette; none = one from its id */
+  color?: string
+  /** Container names, in the order they were added */
+  containers: string[]
+}
+
 /** Compose file of a managed stack */
 export interface StackFile {
   name: string
@@ -147,6 +157,8 @@ export interface ContainersResponse {
   stacks: string[]
   /** Color chosen for each stack (project -> color id); the others get one from their name */
   stackColors: Record<string, string>
+  /** Folders of standalone containers */
+  folders: ContainerFolder[]
   /** Custom order of the list (container names and "stack:<name>", first shown first); others go after, A-Z */
   order: string[]
 }

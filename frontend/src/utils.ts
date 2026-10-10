@@ -67,3 +67,10 @@ export function gradientFor(name: string): string {
 export function failedCount(r?: OperationResult): number {
   return r && 'failed' in r ? r.failed.length : 0
 }
+
+/**
+ * Look of a container / folder while another container is held over it to make a folder
+ * (the drag code sets data-merge: "hover" right away, "ready" after the hold time).
+ */
+export const MERGE_TARGET =
+  'data-[merge=hover]:bg-sky-500/5 data-[merge=ready]:bg-sky-500/10 data-[merge=ready]:outline-2 data-[merge=ready]:-outline-offset-2 data-[merge=ready]:outline-sky-500'
