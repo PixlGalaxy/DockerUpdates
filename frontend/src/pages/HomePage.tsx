@@ -100,6 +100,8 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
   const [stackEditor, setStackEditor] = useState<{ mode: 'add' | 'edit'; initial?: StackFile } | null>(null)
   const [stackMenu, setStackMenu] = useState<{ stack: StackGroup; x: number; y: number } | null>(null)
   const [busyStacks, setBusyStacks] = useState<Set<string>>(new Set())
+  // Stacks / folders whose update check is running (spins their check button)
+  const [checkingGroups, setCheckingGroups] = useState<Set<string>>(new Set())
   const [stackColors, setStackColors] = useState<Record<string, string>>({})
   const [colorPicker, setColorPicker] = useState<{ group: StackGroup; x: number; y: number } | null>(null)
   // Folders of standalone containers, and the folder being named (`created`: just made)
@@ -392,33 +394,49 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
       (r) => toast(r.failed ? 'error' : 'success', `${group.name}: ${r.affected} ${ACTION_DONE[a]}${r.failed ? `, ${r.failed} failed` : ''}`),
     )
 
+  /**
+   * Checks every container of a stack or folder for updates, one by one (registries rate-limit
+   * parallel pulls); the check buttons of the group and of its containers spin meanwhile.
+   */
+  async function checkGroup(group: StackGroup) {
+    const ids = group.containers.filter((c) => c.updateStatus !== 'local').map((c) => c.id)
+    const remove = (set: Set<string>, keys: string[]) => {
+      const next = new Set(set)
+      for (const k of keys) next.delete(k)
+      return next
+    }
+    setCheckingGroups((s) => new Set(s).add(group.id))
+    setCheckingIds((s) => new Set([...s, ...ids]))
+    try {
+      await withStack(
+        group.id,
+        async () => {
+          if (group.kind === 'stack') return api.checkStackUpdates(group.name)
+          const s: CheckSummary = { upToDate: 0, available: 0, authRequired: 0, failed: 0, local: 0 }
+          for (const id of ids) {
+            const r = await api.checkUpdate(id).catch(() => ({ status: 'error' as const }))
+            if (r.status === 'up-to-date') s.upToDate++
+            else if (r.status === 'update-available') s.available++
+            else if (r.status === 'auth-required') s.authRequired++
+            else s.failed++
+          }
+          return s
+        },
+        reportCheckAll,
+      )
+    } finally {
+      setCheckingGroups((s) => remove(s, [group.id]))
+      setCheckingIds((s) => remove(s, ids))
+    }
+  }
+
   function folderMenuItems(group: StackGroup, x: number, y: number): MenuItem[] {
     const folder = folderById(group)
     const ids = group.containers.filter((c) => c.updateStatus === 'update-available').map((c) => c.id)
     const anyActive = group.containers.some(isActive)
     return [
       { label: `Update folder (${ids.length})`, icon: <CloudDownload size={15} />, hidden: ids.length === 0, onSelect: () => void startUpdate(ids) },
-      {
-        label: 'Check for updates',
-        icon: <RefreshCw size={15} />,
-        onSelect: () =>
-          void withStack(
-            group.id,
-            async () => {
-              const s: CheckSummary = { upToDate: 0, available: 0, authRequired: 0, failed: 0, local: 0 }
-              // One by one, like "Check for updates": registries rate-limit parallel pulls
-              for (const c of group.containers.filter((c) => c.updateStatus !== 'local')) {
-                const r = await api.checkUpdate(c.id).catch(() => ({ status: 'error' as const }))
-                if (r.status === 'up-to-date') s.upToDate++
-                else if (r.status === 'update-available') s.available++
-                else if (r.status === 'auth-required') s.authRequired++
-                else s.failed++
-              }
-              return s
-            },
-            reportCheckAll,
-          ),
-      },
+      { label: 'Check for updates', icon: <RefreshCw size={15} />, onSelect: () => void checkGroup(group) },
       { label: 'Start all', icon: <Play size={15} />, separatorBefore: true, hidden: group.containers.every(isActive), onSelect: () => void folderAction(group, 'start') },
       { label: 'Stop all', icon: <Square size={15} />, hidden: !anyActive, onSelect: () => void folderAction(group, 'stop') },
       { label: 'Restart all', icon: <RotateCw size={15} />, hidden: !anyActive, onSelect: () => void folderAction(group, 'restart') },
@@ -448,7 +466,7 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         label: 'Check for updates',
         icon: <RefreshCw size={15} />,
         hidden: st.containers.length === 0,
-        onSelect: () => void withStack(st.name, () => api.checkStackUpdates(st.name), reportCheckAll),
+        onSelect: () => void checkGroup(st),
       },
       { label: st.containers.length === 0 ? 'Deploy' : 'Start all', icon: <Play size={15} />, separatorBefore: true, hidden: !st.managed && st.containers.every(isActive), onSelect: act('start') },
       { label: 'Stop all', icon: <Square size={15} />, hidden: !anyActive || hasSelf, onSelect: act('stop') },
@@ -657,6 +675,13 @@ export default function HomePage({ host, toast, onError, onSignedOut, onSelfUpda
         onMerge={draft ? merge : undefined}
         collapsed={collapsed}
         busyStacks={busyStacks}
+        // "Check for updates" at the bottom checks every container: spin the group buttons too
+        checkingStacks={
+          globalBusy === 'check'
+            ? new Set(items.flatMap((i) => (i.kind === 'stack' ? [i.stack.id] : [])))
+            : checkingGroups
+        }
+        onStackCheck={(stack) => void checkGroup(stack)}
         onToggleStack={(name) =>
           setCollapsedList((l) => (l.includes(name) ? l.filter((n) => n !== name) : [...l, name]))
         }

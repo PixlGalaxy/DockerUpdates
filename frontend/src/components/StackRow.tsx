@@ -1,4 +1,4 @@
-import { ChevronRight, CircleCheck, CircleDashed, CloudDownload, EllipsisVertical, Folder, Layers } from 'lucide-react'
+import { ChevronRight, CircleCheck, CircleDashed, CloudDownload, EllipsisVertical, Folder, Layers, RefreshCw } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 import type { StackColor } from '../stackColors'
 import type { ContainerInfo } from '../types'
@@ -35,9 +35,13 @@ interface Props {
   onAutostart: (enabled: boolean) => void
   collapsed: boolean
   busy: boolean
+  /** The update check of its containers is running */
+  checking: boolean
   onToggle: () => void
   onMenu: (x: number, y: number) => void
   onUpdate: () => void
+  /** Checks every container of the stack / folder for updates */
+  onCheck: () => void
   grip?: ReactNode
   dragging?: boolean
 }
@@ -160,8 +164,35 @@ function StackStatus({ stack }: { stack: StackGroup }) {
   )
 }
 
-function StackUpdate({ stack, busy, onUpdate }: { stack: StackGroup; busy: boolean; onUpdate: () => void }) {
-  const { updates, unchecked, total } = stackSummary(stack)
+/**
+ * Update state of a stack / folder with its check button below, like a container (with a label:
+ * there is no tag next to it).
+ */
+function StackUpdate(props: { stack: StackGroup; busy: boolean; checking: boolean; onUpdate: () => void; onCheck: () => void }) {
+  const { stack, busy, checking, onCheck } = props
+  const total = stack.containers.length
+  if (total === 0) return null
+  const checkable = stack.containers.some((c) => c.updateStatus !== 'local')
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <StackUpdateState {...props} />
+      <button
+        type="button"
+        title={`Check every ${unit(stack, 1)} of ${stack.name} for updates`}
+        // Still disabled while checking, but fully visible so the spin reads as progress
+        className={`inline-flex h-6 items-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 text-[11px] font-medium whitespace-nowrap text-indigo-700 transition-colors hover:bg-indigo-500/20 focus-visible:outline-2 focus-visible:outline-sky-500 disabled:pointer-events-none dark:text-indigo-300 ${checking ? '' : 'disabled:opacity-40'}`}
+        disabled={busy || checking || !checkable}
+        onClick={onCheck}
+      >
+        <RefreshCw size={12} className={checking ? 'animate-spin' : undefined} />
+        {checking ? 'Checking…' : `Check for ${stack.kind} updates`}
+      </button>
+    </div>
+  )
+}
+
+function StackUpdateState({ stack, busy, onUpdate }: { stack: StackGroup; busy: boolean; onUpdate: () => void }) {
+  const { updates, unchecked } = stackSummary(stack)
   if (updates.length > 0) {
     return (
       <Button
@@ -177,7 +208,6 @@ function StackUpdate({ stack, busy, onUpdate }: { stack: StackGroup; busy: boole
       </Button>
     )
   }
-  if (total === 0) return null
   return unchecked ? (
     <span className="inline-flex items-center gap-1 text-xs text-muted">
       <CircleDashed size={13} /> Not checked
@@ -195,7 +225,7 @@ function openBelow(e: MouseEvent<HTMLElement>, onMenu: (x: number, y: number) =>
 }
 
 /** Desktop: header row of a stack, above its services, with the same columns as a container. */
-export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, busy, onToggle, onMenu, onUpdate, onAutostart, grip, dragging }: Props) {
+export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, busy, checking, onToggle, onMenu, onUpdate, onCheck, onAutostart, grip, dragging }: Props) {
   const td = 'px-3 py-3.5 align-middle'
   return (
     <tr
@@ -236,7 +266,7 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
 
       {/* Version */}
       <td className={td}>
-        <StackUpdate stack={stack} busy={busy} onUpdate={onUpdate} />
+        <StackUpdate stack={stack} busy={busy} checking={checking} onUpdate={onUpdate} onCheck={onCheck} />
       </td>
 
       {advanced && <td colSpan={2} className={td} />}
@@ -266,7 +296,7 @@ export function StackHeaderRow({ stack, advanced, hostIp, hostCpus, collapsed, b
 }
 
 /** Phones: header card of a stack; its service cards go in `children`. */
-export function StackCard({ stack, hostCpus, collapsed, busy, onToggle, onMenu, onUpdate, onAutostart, grip, dragging, children }: Props & { children: ReactNode }) {
+export function StackCard({ stack, hostCpus, collapsed, busy, checking, onToggle, onMenu, onUpdate, onCheck, onAutostart, grip, dragging, children }: Props & { children: ReactNode }) {
   return (
     <section
       data-order-id={stack.orderKey}
@@ -290,7 +320,7 @@ export function StackCard({ stack, hostCpus, collapsed, busy, onToggle, onMenu, 
         <StackBadges stack={stack} />
         <StackAutostart stack={stack} busy={busy} onAutostart={onAutostart} />
         <span className="ml-auto">
-          <StackUpdate stack={stack} busy={busy} onUpdate={onUpdate} />
+          <StackUpdate stack={stack} busy={busy} checking={checking} onUpdate={onUpdate} onCheck={onCheck} />
         </span>
       </div>
       {stackUsage(stack) && (

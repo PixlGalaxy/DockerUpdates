@@ -41,6 +41,9 @@ interface Props {
   collapsed: Set<string>
   /** Groups (StackGroup.id) with an action running */
   busyStacks: Set<string>
+  /** Groups (StackGroup.id) whose update check is running */
+  checkingStacks: Set<string>
+  onStackCheck: (stack: StackGroup) => void
   onToggleStack: (name: string) => void
   onStackMenu: (stack: StackGroup, x: number, y: number) => void
   onStackUpdate: (stack: StackGroup) => void
@@ -73,6 +76,8 @@ export default function ContainerTable({
   onMerge,
   collapsed,
   busyStacks,
+  checkingStacks,
+  onStackCheck,
   onToggleStack,
   onStackMenu,
   onStackUpdate,
@@ -419,6 +424,8 @@ export default function ContainerTable({
     onAutostart: (enabled: boolean) => onStackAutostart(stack, enabled),
     collapsed: !showServices(stack),
     busy: busyStacks.has(stack.id),
+    checking: checkingStacks.has(stack.id),
+    onCheck: () => onStackCheck(stack),
     onToggle: () => onToggleStack(stack.id),
     onMenu: (x: number, y: number) => onStackMenu(stack, x, y),
     onUpdate: () => onStackUpdate(stack),
