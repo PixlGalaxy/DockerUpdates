@@ -22,4 +22,4 @@ Thumbs.db
 .idea/
 
 # Local clone of the GitHub wiki (published with scripts/publish-wiki.sh)
-wiki/
+/wiki/

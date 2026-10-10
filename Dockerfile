@@ -21,6 +21,9 @@ ENV NODE_ENV=production \
     PORT=3000 \
     APP_VERSION=${APP_VERSION}
 
+# docker CLI + compose plugin: compose stacks are deployed and updated with `docker compose`
+RUN apk add --no-cache docker-cli docker-cli-compose
+
 WORKDIR /app/backend
 
 COPY backend/package*.json ./

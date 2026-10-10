@@ -1,9 +1,10 @@
 // Custom order of the containers on the home page (set with the lock button), persisted in
 // DATA_DIR/container-order.json. Stored by name: container IDs change on every update.
+// Compose stacks move as one block, stored as "stack:<project>".
 import { readJson, writeJson } from './store.js';
 
 const FILE = 'container-order.json';
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const NAME_RE = /^(stack:)?[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const MAX = 2000;
 
 let order = null;
@@ -16,7 +17,7 @@ export async function getOrder() {
   return order;
 }
 
-/** Replaces the saved order. `names`: container names, first one shown first. */
+/** Replaces the saved order. `names`: container names and "stack:<project>", first one shown first. */
 export async function saveOrder(names) {
   if (!Array.isArray(names) || names.length > MAX || names.some((n) => typeof n !== 'string' || !NAME_RE.test(n))) {
     throw Object.assign(new Error('Invalid container order'), { status: 400 });

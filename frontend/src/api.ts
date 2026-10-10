@@ -19,6 +19,8 @@ import type {
   RunResult,
   Schedule,
   SchedulePreview,
+  StackAction,
+  StackFile,
   Settings,
   TemplateSummary,
   UpdateAllSummary,
@@ -116,6 +118,21 @@ export const api = {
   host: () => request<HostInfo>('/api/host'),
   hostUsage: () => request<HostUsage>('/api/host/usage'),
   hostCpus: () => request<CpuLayout>('/api/host/cpus'),
+
+  stack: (name: string) => request<StackFile>(`/api/stacks/${encodeURIComponent(name)}`),
+  /** Validates and saves the compose file, then deploys the stack with a live log */
+  startStackDeploy: (stack: StackFile & { isNew: boolean }) =>
+    post<{ id: string; title: string }>('/api/operations/stack-deploy', stack),
+  stackAction: (name: string, action: StackAction) =>
+    post<BulkSummary>(`/api/stacks/${encodeURIComponent(name)}/${action}`),
+  setStackColor: (name: string, color: string | null) =>
+    request<{ stackColors: Record<string, string> }>(`/api/stacks/${encodeURIComponent(name)}/color`, {
+      method: 'PUT',
+      body: JSON.stringify({ color }),
+    }),
+  setStackAutostart: (name: string, enabled: boolean) =>
+    post<BulkSummary>(`/api/stacks/${encodeURIComponent(name)}/autostart`, { enabled }),
+  checkStackUpdates: (name: string) => post<CheckSummary>(`/api/stacks/${encodeURIComponent(name)}/check-updates`),
 
   history: (container?: string) =>
     request<HistoryEntry[]>(`/api/history${container ? `?container=${encodeURIComponent(container)}` : ''}`),

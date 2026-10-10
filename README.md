@@ -33,6 +33,7 @@
 - **Self-update**: DockerUpdates updates itself safely through a short-lived helper container
 - **Edit containers**: name, image, network, auto-restart, memory limit slider, ports, volumes, environment variables and **Extra parameters** (`--cpus=1.5 --hostname=app …`) validated as you type
 - **Templates**: every created or edited container is saved as a template; import / export as JSON
+- **Compose stacks**: deploy a `docker-compose` file from **Add compose** (with an optional `.env`), edit and redeploy it, and update its services with `docker compose pull` + `up -d`. Stacks started elsewhere are grouped too. Each stack shows the CPU, RAM and ports of all its services, an autostart switch and a color you pick with a right-click
 - **Dedicated LAN IPs (macvlan / ipvlan)**: enable it once in Settings (the server network is detected automatically, nothing to run on the host), then give containers a fixed IP with an availability check
 - **Bulk actions**: start / stop / pause / resume all (DockerUpdates never stops or pauses itself)
 - **Icons**: custom icon URL per image, or the app's favicon discovered automatically
@@ -129,6 +130,19 @@ Open `http://<server-ip>:3000` and sign in.
 The `data` volume keeps settings, notification channels, update history, templates, icons and login sessions across updates. Without it, they are lost every time the container is recreated.
 
 > If `~/.docker/config.json` does not exist (you never ran `docker login`), remove that volume line.
+
+### Compose stacks
+
+Stacks created with **Add compose** are saved in `STACKS_DIR` (default: `data/stacks`). Docker resolves relative paths in a compose file (`./db:/var/lib/mysql`) on the **host**, so to use them, mount a stacks folder at the **same path** on the host and in DockerUpdates:
+
+```yaml
+    environment:
+      - STACKS_DIR=/opt/stacks
+    volumes:
+      - /opt/stacks:/opt/stacks
+```
+
+Without it, stacks still work with named volumes and absolute host paths; a compose file with relative paths is refused with an explanation, so no data ends up in an unexpected folder.
 
 ## Configuration
 

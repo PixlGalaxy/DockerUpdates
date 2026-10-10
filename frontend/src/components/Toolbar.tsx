@@ -1,5 +1,6 @@
 import {
   CloudDownload,
+  Layers,
   LoaderCircle,
   Lock,
   LockOpen,
@@ -106,10 +107,11 @@ export function TopBar({
 
 // ---------- Bottom bar: colored bulk actions (Unraid style) ----------
 
-type Tone = 'sky' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'violet'
+type Tone = 'sky' | 'fuchsia' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'violet'
 
 const TONES: Record<Tone, string> = {
   sky: 'border-sky-500/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+  fuchsia: 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-700 hover:bg-fuchsia-500/20 dark:text-fuchsia-300',
   emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
   rose: 'border-rose-500/40 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-300',
   amber: 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
@@ -155,17 +157,21 @@ interface ActionBarProps {
   busy: string | null
   updates: number
   onAdd: () => void
+  onAddCompose: () => void
   onBulk: (action: 'start' | 'stop' | 'pause' | 'unpause') => void
   onCheckUpdates: () => void
   onUpdateAll: () => void
 }
 
-export function ActionBar({ busy, updates, onAdd, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
+export function ActionBar({ busy, updates, onAdd, onAddCompose, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
   const locked = busy !== null
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
       <BarButton tone="sky" icon={<Plus size={14} />} onClick={onAdd}>
         Add container
+      </BarButton>
+      <BarButton tone="fuchsia" icon={<Layers size={14} />} title="Create a stack from a docker-compose file" onClick={onAddCompose}>
+        Add compose
       </BarButton>
       <span className="mx-1 hidden h-6 w-px bg-line sm:block" />
       <BarButton tone="emerald" icon={<Play size={14} />} loading={busy === 'start'} disabled={locked} onClick={() => onBulk('start')}>

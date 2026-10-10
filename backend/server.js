@@ -23,6 +23,8 @@ import { cpuLayout, detectCpuLayout } from './cpuLayout.js';
 import * as scheduler from './scheduler.js';
 import { onConfigChange, publicConfig, trustProxySetting as currentTrustProxy, updateConfig } from './runtimeConfig.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
+import { getStackColors, setStackColor } from './stackColors.js';
+import { getStack, listStacks } from './stacks.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
 import { iconFile, initIcons, resetAutoIcon } from './icons.js';
 import {
@@ -88,6 +90,9 @@ app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
   hostName: await dk.hostName(),
   containers: await dk.listContainers(),
+  // Managed compose stacks (also the ones with no container right now)
+  stacks: await listStacks(),
+  stackColors: await getStackColors(),
   order: await getOrder(),
 })));
 // Custom order of the list (lock button): body { names: string[] }
@@ -191,10 +196,34 @@ app.post('/api/operations/create', handle(async (req) => {
   const title = 'Installing the container';
   return { id: startOperation(title, (log) => run(log)), title };
 }));
+// body: { name, yaml, env?, isNew }. A file docker compose rejects is not saved (the editor shows why)
+app.post('/api/operations/stack-deploy', handle(async (req) => {
+  const { name, run } = await dk.prepareStackDeploy(req.body);
+  const title = req.body?.isNew ? 'Deploying the stack' : 'Redeploying the stack';
+  return {
+    id: startOperation(title, async (log) => {
+      const r = await run(log);
+      void dk.checkStackSoon(name).catch(() => {});
+      return r;
+    }),
+    title,
+  };
+}));
 app.get('/api/operations/:opId/stream', (req, res) => {
   if (!/^[a-f0-9-]{36}$/.test(req.params.opId)) return res.status(404).end();
   streamOperation(req, res);
 });
+
+// --- Compose stacks ---
+app.get('/api/stacks/:name', handle((req) => getStack(req.params.name)));
+// body: { color: string | null } (null = automatic color)
+app.put('/api/stacks/:name/color', handle(async (req) => ({
+  stackColors: await setStackColor(req.params.name, req.body?.color ?? null),
+})));
+app.post('/api/stacks/:name/autostart', handle((req) => dk.setStackAutostart(req.params.name, Boolean(req.body?.enabled))));
+app.post('/api/stacks/:name/check-updates', handle((req) => dk.checkStackUpdates(req.params.name)));
+// start | stop | restart | down (down: managed stacks only, removes the stack)
+app.post('/api/stacks/:name/:action', handle((req) => dk.stackAction(req.params.name, req.params.action)));
 
 // --- History, templates ---
 app.get('/api/history', handle((req) => listHistory({ container: req.query.container, limit: req.query.limit })));

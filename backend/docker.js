@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 import { buildCreateOptions, specFromInspect, validateSpec } from './containerSpec.js';
 import { describeExtraParams } from './extraParams.js';
 import { suppressHealthAlerts } from './health.js';
@@ -13,6 +14,8 @@ import { renameInOrder } from './order.js';
 import { dockerRunCommand, humanSize } from './runCommand.js';
 import { hostIpOverride, hostIpSource, hostNameOverride } from './runtimeConfig.js';
 import { getSettings } from './settings.js';
+import { setStackColor } from './stackColors.js';
+import { compose, listStacks, prepareDeploy, removeStack, safeStackName, setStackRestart } from './stacks.js';
 import { cachedStats, getStats, initStats, parseSample } from './stats.js';
 import { saveTemplate } from './templates.js';
 
@@ -65,6 +68,20 @@ async function detectSelf() {
   }
   // Default container hostname is the short container ID
   return process.platform === 'linux' ? tryInspect(os.hostname()) : null;
+}
+
+/**
+ * Path of `p` (a path of this process) on the Docker host: the same path outside a container,
+ * else through the mount that holds it; null when it is only inside the container.
+ */
+async function hostPathFor(p) {
+  const id = await selfId();
+  if (!id) return p;
+  const mounts = (await docker.getContainer(id).inspect()).Mounts ?? [];
+  const m = mounts
+    .filter((x) => p === x.Destination || p.startsWith(`${x.Destination}/`))
+    .sort((a, b) => b.Destination.length - a.Destination.length)[0];
+  return m ? path.posix.join(m.Source, p.slice(m.Destination.length)) : null;
 }
 
 async function isSelf(id) {
@@ -166,7 +183,8 @@ function cpusetCount(set) {
 }
 
 export async function listContainers() {
-  const [list, self] = await Promise.all([docker.listContainers({ all: true }), selfId()]);
+  const [list, self, stacks] = await Promise.all([docker.listContainers({ all: true }), selfId(), listStacks()]);
+  const managed = new Set(stacks);
   const visible = list.filter((info) => !info.Labels?.[UPDATER_LABEL]);
   const result = await Promise.all(
     visible.map(async (info) => {
@@ -188,6 +206,7 @@ export async function listContainers() {
         });
       }
       const update = updateStatus.get(name);
+      const project = inspect.Config.Labels?.[COMPOSE_PROJECT];
       return {
         id: info.Id,
         name,
@@ -216,6 +235,10 @@ export async function listContainers() {
         updateTo: update?.to,
         updateKind: update?.kind,
         isSelf: info.Id === self,
+        // Compose stack the container belongs to; `managed`: its compose file lives in DockerUpdates
+        stack: project
+          ? { project, service: inspect.Config.Labels[COMPOSE_SERVICE], managed: managed.has(project) }
+          : undefined,
         // Limits configured on the container (0 = no limit, falls back to host RAM in stats)
         memLimitConfigured: inspect.HostConfig.Memory || 0,
         cpuLimit: inspect.HostConfig.NanoCpus
@@ -241,6 +264,9 @@ export async function listContainers() {
   void discoverIcons(result.map((c) => c._discover));
   return result.map(({ _discover, ...c }) => c);
 }
+
+const COMPOSE_PROJECT = 'com.docker.compose.project';
+const COMPOSE_SERVICE = 'com.docker.compose.service';
 
 /** Project page from OCI / Unraid labels (shown as "Project page" in the context menu). */
 function projectUrl(labels = {}) {
@@ -642,6 +668,12 @@ export async function updateContainer(id, { trigger = 'manual', log = silent } =
   const inspect = await docker.getContainer(id).inspect();
   const name = cleanName(inspect.Name);
   const image = inspect.Config.Image;
+  const project = inspect.Config.Labels?.[COMPOSE_PROJECT];
+  if (project && (await listStacks()).includes(project) && !(await isSelf(id))) {
+    const service = inspect.Config.Labels[COMPOSE_SERVICE];
+    const [item] = await updateStackServices(project, [{ id, name, service }], { trigger, log });
+    return { ...item, selfUpdate: false };
+  }
   const started = Date.now();
   let change = {};
 
@@ -696,6 +728,136 @@ export async function updateContainer(id, { trigger = 'manual', log = silent } =
   }
 }
 
+/**
+ * Updates services of a managed stack with docker compose (pull, then up -d for just those
+ * services), so the compose file stays the source of truth. One history entry per service.
+ * `services`: [{ id, name, service }]. Returns [{ name, image, from, to }].
+ */
+async function updateStackServices(project, services, { trigger = 'manual', log = silent } = {}) {
+  const started = Date.now();
+  const before = await Promise.all(services.map(async (s) => {
+    const inspect = await docker.getContainer(s.id).inspect();
+    return { ...s, image: inspect.Config.Image, imageId: inspect.Image };
+  }));
+  const names = [...new Set(before.map((b) => b.service))];
+  const record = (b, result, extra = {}) => addHistory({
+    container: b.name, image: b.image, stack: project, trigger, result, durationMs: Date.now() - started, ...extra,
+  }).catch((e) => console.error('Could not save history:', e.message));
+
+  try {
+    log.section(`Pulling images: ${project} (${names.join(', ')})`);
+    await compose(project, ['pull', '--ignore-buildable', ...names], log);
+    log.section(`Recreating services: ${names.join(', ')}`);
+    // --no-deps: a dependency whose new image was already pulled (by an update check) is not
+    // recreated along with them; it is updated when it is selected
+    await compose(project, ['up', '-d', '--no-deps', ...names], log);
+  } catch (err) {
+    log.line(`ERROR: ${err.message}`);
+    await Promise.all(before.map((b) => record(b, 'failed', { error: err.message })));
+    throw err;
+  }
+
+  const items = [];
+  for (const b of before) {
+    const latest = await docker.getImage(b.image).inspect();
+    const current = await docker.getImage(b.imageId).inspect().catch(() => ({ Id: b.imageId }));
+    const change = latest.Id === b.imageId
+      ? { from: versionChange(current, latest).from, to: versionChange(current, latest).from, kind: 'reinstall' }
+      : versionChange(current, latest);
+    updateStatus.set(b.name, { status: 'up-to-date' });
+    await record(b, 'success', change);
+    if (latest.Id !== b.imageId && (await removeOldImage(b.imageId))) {
+      log.line(`Removed orphan image: ${b.imageId.replace(/^sha256:/, '').slice(0, 12)}`);
+    }
+    items.push({ name: b.name, image: b.image, ...change });
+  }
+  log.line('');
+  log.line('The command finished successfully!');
+  return items;
+}
+
+// ---------- Compose stacks ----------
+
+/** Containers of a compose project (managed or external). */
+async function stackContainers(project) {
+  return docker.listContainers({ all: true, filters: { label: [`${COMPOSE_PROJECT}=${project}`] } });
+}
+
+/** Validates and saves a new / edited managed stack; returns `run(log)` that deploys it. */
+export function prepareStackDeploy(body) {
+  return prepareDeploy(body ?? {}, {
+    projectInUse: async (name) => (await stackContainers(name)).length > 0,
+    hostPath: (p) => hostPathFor(p).catch(() => null),
+  });
+}
+
+/**
+ * start / stop / restart every service of a stack: with docker compose when it is managed here
+ * (respects depends_on), else container by container. DockerUpdates itself is never stopped.
+ */
+export async function stackAction(project, action) {
+  safeStackName(project);
+  if (!['start', 'stop', 'restart', 'down'].includes(action)) throw httpError(400, 'Invalid action');
+  const [list, self] = await Promise.all([stackContainers(project), selfId()]);
+  if (list.some((i) => i.Id === self) && action !== 'start') {
+    throw httpError(400, 'This stack runs DockerUpdates itself: stop its other services one by one');
+  }
+  const managed = (await listStacks()).includes(project);
+  if (action === 'down') {
+    if (!managed) throw httpError(400, 'Only stacks created in DockerUpdates can be removed here');
+    await removeStack(project);
+    await setStackColor(project, null).catch(() => {});
+    return { affected: list.length, failed: 0 };
+  }
+  if (managed) {
+    // `up -d` only to deploy a stack with no container: on existing ones it would also recreate
+    // the services whose new image an update check already pulled (an update without history)
+    await compose(project, action === 'start' && list.length === 0 ? ['up', '-d'] : [action]);
+    return { affected: list.length, failed: 0 };
+  }
+  const results = await Promise.allSettled(list.map((i) => doAction(i.Id, action)));
+  return {
+    affected: results.filter((r) => r.status === 'fulfilled').length,
+    failed: results.filter((r) => r.status === 'rejected').length,
+  };
+}
+
+/** Checks every service of a stack for updates. */
+export async function checkStackUpdates(project) {
+  safeStackName(project);
+  const summary = { upToDate: 0, available: 0, authRequired: 0, failed: 0, local: 0 };
+  for (const i of await stackContainers(project)) {
+    const { status } = await checkUpdate(i.Id);
+    if (status === 'up-to-date') summary.upToDate++;
+    else if (status === 'update-available') summary.available++;
+    else if (status === 'auth-required') summary.authRequired++;
+    else if (status === 'local') summary.local++;
+    else summary.failed++;
+  }
+  return summary;
+}
+
+/**
+ * Autostart (restart policy unless-stopped / no) for every service of a stack, applied to the
+ * running containers at once (no restart). A managed stack also gets it in its compose file
+ * first, so a redeploy or an update does not bring the old policy back.
+ */
+export async function setStackAutostart(project, enabled) {
+  safeStackName(project);
+  if ((await listStacks()).includes(project)) await setStackRestart(project, enabled);
+  const list = await stackContainers(project);
+  const results = await Promise.allSettled(list.map((i) => setAutostart(i.Id, enabled)));
+  return {
+    affected: results.filter((r) => r.status === 'fulfilled').length,
+    failed: results.filter((r) => r.status === 'rejected').length,
+  };
+}
+
+/** Checks the containers of a stack shortly after it was deployed. */
+export async function checkStackSoon(project) {
+  for (const i of await stackContainers(project)) checkUpdateSoon(i.Id);
+}
+
 /** Deletes the image a container used before an update (if enabled and nothing else uses it). */
 async function removeOldImage(imageId) {
   try {
@@ -718,7 +880,28 @@ export async function updateMany({ ids, trigger = 'manual', log = silent } = {})
     ? all.filter((c) => ids.includes(c.id))
     : all.filter((c) => c.updateStatus === 'update-available');
   pending.sort((a, b) => Number(a.isSelf) - Number(b.isSelf));
+
+  // Services of stacks managed here: one `docker compose pull` + `up -d` per stack
+  const byStack = new Map();
   for (const c of pending) {
+    if (!c.stack?.managed || c.isSelf) continue;
+    byStack.set(c.stack.project, [...(byStack.get(c.stack.project) ?? []), c]);
+  }
+  for (const [project, list] of byStack) {
+    try {
+      const items = await updateStackServices(
+        project,
+        list.map((c) => ({ id: c.id, name: c.name, service: c.stack.service })),
+        { trigger, log },
+      );
+      summary.updated += items.length;
+      summary.items.push(...items);
+    } catch (err) {
+      for (const c of list) summary.failed.push({ name: c.name, image: c.image, error: err.message });
+    }
+  }
+
+  for (const c of pending.filter((x) => !(x.stack?.managed && !x.isSelf))) {
     try {
       const r = await updateContainer(c.id, { trigger, log });
       if (r.selfUpdate) summary.selfUpdate = true;
@@ -843,6 +1026,9 @@ export { listNetworkInfo as listNetworks } from './ipCheck.js';
 export async function editContainer(id, spec) {
   await assertNotSelf(id, 'edit');
   const current = await docker.getContainer(id).inspect();
+  // Recreating it here would make it differ from its compose file
+  const project = current.Config.Labels?.[COMPOSE_PROJECT];
+  if (project) throw httpError(409, `${cleanName(current.Name)} belongs to the compose stack "${project}": edit its compose file instead`);
   const next = { ...spec, image: withTag(spec.image ?? '') };
   validateSpec(next); // fail before touching anything
   await validateFixedIp(next.network || 'bridge', String(next.ip ?? '').trim());

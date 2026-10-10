@@ -15,7 +15,8 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { ContainerInfo, VolumeMapping } from '../types'
+import type { StackColor } from '../stackColors'
+import type { ContainerInfo, PortMapping, VolumeMapping } from '../types'
 import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
 
@@ -38,6 +39,8 @@ interface Props {
   dragging?: boolean
   /** Cores of the Docker host (scale of the CPU bar) */
   hostCpus?: number
+  /** Service shown inside its compose stack group (that stack's color): indented, moves with the stack */
+  nested?: StackColor
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -117,13 +120,11 @@ export default function ContainerRow({
   grip,
   dragging,
   hostCpus,
+  nested,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
   const hostNet = c.network === 'host'
-  const published = c.ports.filter((p) => p.hostPort)
-  // Shared by both port columns so they expand and collapse together
-  const [portsOpen, setPortsOpen] = useState(false)
 
   const openMenuHere = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -132,17 +133,18 @@ export default function ContainerRow({
 
   return (
     <tr
-      data-order-id={c.name}
+      data-order-id={nested ? undefined : c.name}
       onContextMenu={(e) => {
         // Keep the native menu on links and text fields
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
+      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${nested ? nested.row : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
     >
       {/* Application */}
-      <td className={td}>
+      <td className={`${td} ${nested ? 'relative pl-7' : ''}`}>
+        {nested && <span aria-hidden className={`absolute inset-y-0 left-3.5 w-0.5 ${nested.line}`} />}
         <div className="flex items-center gap-3">
           {grip}
           <AppIcon container={c} onClick={openMenuHere} />
@@ -187,59 +189,7 @@ export default function ContainerRow({
         </>
       )}
 
-      {/* Container port */}
-      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
-        {hostNet ? (
-          <span className="text-muted">all</span>
-        ) : c.ports.length === 0 ? (
-          <span className="text-muted">—</span>
-        ) : (
-          <PortList
-            items={c.ports}
-            expanded={portsOpen}
-            onToggle={() => setPortsOpen((o) => !o)}
-            render={(p) => (
-              <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
-                {p.containerPort}:{p.protocol.toUpperCase()}
-              </div>
-            )}
-          />
-        )}
-      </td>
-
-      {/* LAN IP:Port */}
-      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
-        {hostNet ? (
-          <span>{hostIp}</span>
-        ) : published.length === 0 ? (
-          <span className="text-muted">—</span>
-        ) : (
-          <PortList
-            items={published}
-            expanded={portsOpen}
-            onToggle={() => setPortsOpen((o) => !o)}
-            render={(p) => (
-              <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
-                {p.protocol === 'tcp' ? (
-                  <a
-                    href={`http://${hostIp}:${p.hostPort}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
-                  >
-                    {hostIp}:{p.hostPort}
-                    <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
-                  </a>
-                ) : (
-                  <span>
-                    {hostIp}:{p.hostPort}
-                  </span>
-                )}
-              </div>
-            )}
-          />
-        )}
-      </td>
+      <PortCells ports={c.ports} hostNet={hostNet} hostIp={hostIp} />
 
       {advanced && (
         <td className={`${td} min-w-52`}>
@@ -285,6 +235,7 @@ export function ContainerCard({
   grip,
   dragging,
   hostCpus,
+  nested,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -299,7 +250,7 @@ export function ContainerCard({
 
   return (
     <article
-      data-order-id={c.name}
+      data-order-id={nested ? undefined : c.name}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
@@ -554,7 +505,7 @@ function UpdateInfo({
   )
 }
 
-function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerInfo; wide?: boolean; hostCpus?: number }) {
+export function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerInfo; wide?: boolean; hostCpus?: number }) {
   // CPU % is per core, like `docker stats`: 100% = one full core, so 140% = 1.4 cores. The bar
   // shows it against the cores the container can really use (its limit, its pinned cores or
   // every core of the host), so it only fills up when the container uses all of them.
@@ -615,6 +566,72 @@ function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerI
     </div>
   ) : (
     <span className="text-xs text-muted">—</span>
+  )
+}
+
+/**
+ * "Container port" and "LAN IP:Port" cells of a container, or of a whole stack (the ports of all
+ * its services). Long lists collapse into "+N more"; both cells expand together.
+ */
+export function PortCells({ ports, hostNet, hostIp }: { ports: PortMapping[]; hostNet: boolean; hostIp: string }) {
+  const [portsOpen, setPortsOpen] = useState(false)
+  const published = ports.filter((p) => p.hostPort)
+  return (
+    <>
+      {/* Container port */}
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
+        {hostNet ? (
+          <span className="text-muted">all</span>
+        ) : ports.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <PortList
+            items={ports}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
+                {p.containerPort}:{p.protocol.toUpperCase()}
+              </div>
+            )}
+          />
+        )}
+      </td>
+
+      {/* LAN IP:Port */}
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
+        {hostNet ? (
+          <span>{hostIp}</span>
+        ) : published.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <PortList
+            items={published}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
+                {p.protocol === 'tcp' ? (
+                  <a
+                    href={`http://${hostIp}:${p.hostPort}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
+                  >
+                    {hostIp}:{p.hostPort}
+                    <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
+                  </a>
+                ) : (
+                  <span>
+                    {hostIp}:{p.hostPort}
+                  </span>
+                )}
+              </div>
+            )}
+          />
+        )}
+      </td>
+    </>
   )
 }
 

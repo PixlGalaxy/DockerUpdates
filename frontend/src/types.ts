@@ -69,6 +69,21 @@ export interface ContainerInfo {
   cpusetCount: number
   /** URL of the cached icon, if any */
   icon?: string
+  /** Compose stack it belongs to; `managed`: its compose file lives in DockerUpdates */
+  stack?: StackRef
+}
+
+export interface StackRef {
+  project: string
+  service: string
+  managed: boolean
+}
+
+/** Compose file of a managed stack */
+export interface StackFile {
+  name: string
+  yaml: string
+  env: string
 }
 
 export interface CheckResult {
@@ -128,9 +143,15 @@ export interface ContainersResponse {
   /** Hostname of the Docker host */
   hostName: string
   containers: ContainerInfo[]
-  /** Custom order of the list (container names, first shown first); others go after, A-Z */
+  /** Managed compose stacks (also the ones with no container right now) */
+  stacks: string[]
+  /** Color chosen for each stack (project -> color id); the others get one from their name */
+  stackColors: Record<string, string>
+  /** Custom order of the list (container names and "stack:<name>", first shown first); others go after, A-Z */
   order: string[]
 }
+
+export type StackAction = 'start' | 'stop' | 'restart' | 'down'
 
 export type ContainerAction =
   | 'start'

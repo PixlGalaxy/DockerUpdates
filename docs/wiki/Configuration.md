@@ -30,6 +30,8 @@ To check the value a running container got: `docker exec dockerupdates printenv 
 | [`DOCKER_HOST` / `DOCKER_SOCKET`](#docker_host--docker_socket) | | platform socket | Read-only |
 | [`TZ`](#tz) | | system time zone | Settings > General |
 | [`DATA_DIR`](#data_dir) | | `/app/backend/data` | |
+| [`STACKS_DIR`](#stacks_dir) | | `DATA_DIR/stacks` | |
+| [`DOCKER_CLI`](#docker_cli) | | `docker` | |
 | [`DOCKER_CONFIG`](#docker_config) | | `/root/.docker` | |
 | [`SELF_CONTAINER`](#self_container) | | auto-detected | |
 
@@ -154,6 +156,25 @@ TZ=America/Lima
 ### `DATA_DIR`
 
 Default `/app/backend/data`. Folder for settings, sessions, history, templates, icons and the login set in the UI. Mount a volume there instead of changing it.
+
+### `STACKS_DIR`
+
+Default `DATA_DIR/stacks`. Folder of the compose stacks created with **Add compose** (one folder per stack, with its `compose.yaml` and `.env`). Docker creates the relative paths of a compose file (`./db`) on the host, so mount this folder at the same path on the host and in the container:
+
+```env
+STACKS_DIR=/opt/stacks
+```
+
+```yaml
+volumes:
+  - /opt/stacks:/opt/stacks
+```
+
+See [Compose stacks](Compose-Stacks.md).
+
+### `DOCKER_CLI`
+
+Default `docker`. The docker CLI with the compose plugin, used for compose stacks (both are included in the image). Only set it when running from source and `docker` is not in `PATH`, e.g. Docker Desktop on macOS: `/Applications/Docker.app/Contents/Resources/bin/docker`.
 
 ---
 

@@ -1,11 +1,18 @@
 import { GripVertical } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import type { StackColor } from '../stackColors'
 import type { ContainerInfo } from '../types'
 import ContainerRow, { ContainerCard } from './ContainerRow'
 import Logo from './Logo'
+import { StackCard, StackHeaderRow, type StackGroup } from './StackRow'
+
+/** One entry of the list: a container, or a compose stack with its services. `key` is its order id. */
+export type ListItem =
+  | { kind: 'container'; key: string; container: ContainerInfo }
+  | { kind: 'stack'; key: string; stack: StackGroup }
 
 interface Props {
-  containers: ContainerInfo[]
+  items: ListItem[]
   hostIp: string
   /** Cores of the Docker host (scale of the CPU bars) */
   hostCpus?: number
@@ -21,6 +28,14 @@ interface Props {
   onCopy: (text: string) => void
   /** Order unlocked: rows get a drag handle; moves `name` to the place of `over` */
   onReorder?: (name: string, over: string) => void
+  /** Stacks whose services are hidden */
+  collapsed: Set<string>
+  /** Stacks with an action running */
+  busyStacks: Set<string>
+  onToggleStack: (name: string) => void
+  onStackMenu: (stack: StackGroup, x: number, y: number) => void
+  onStackUpdate: (stack: StackGroup) => void
+  onStackAutostart: (stack: StackGroup, enabled: boolean) => void
 }
 
 /** Pixels from the top / bottom of the window where dragging scrolls the page */
@@ -33,7 +48,7 @@ const HOLD_TOUCH_MS = 300
 const LIFT_SHADOW = '0 18px 40px -8px rgb(0 0 0 / 0.35)'
 
 export default function ContainerTable({
-  containers,
+  items,
   hostIp,
   hostCpus,
   advanced,
@@ -42,6 +57,12 @@ export default function ContainerTable({
   checkingIds,
   emptyMessage,
   onReorder,
+  collapsed,
+  busyStacks,
+  onToggleStack,
+  onStackMenu,
+  onStackUpdate,
+  onStackAutostart,
   ...handlers
 }: Props) {
   const [dragName, setDragName] = useState<string | null>(null)
@@ -56,7 +77,7 @@ export default function ContainerTable({
   // each row before and after the render, then animate from the old one)
   const listRef = useRef<HTMLDivElement>(null)
   const positions = useRef(new Map<string, number>())
-  const orderKey = containers.map((c) => c.name).join('/')
+  const orderKey = items.map((i) => i.key).join('/')
   const sorting = Boolean(onReorder)
   useLayoutEffect(() => {
     const els = listRef.current?.querySelectorAll<HTMLElement>('[data-order-id]') ?? []
@@ -247,14 +268,72 @@ export default function ContainerTable({
         onKeyDown={(e) => {
           if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
           e.preventDefault()
-          const i = containers.findIndex((c) => c.name === name)
-          const next = containers[e.key === 'ArrowUp' ? i - 1 : i + 1]
-          if (next) onReorder(name, next.name)
+          const i = items.findIndex((it) => it.key === name)
+          const next = items[e.key === 'ArrowUp' ? i - 1 : i + 1]
+          if (next) onReorder(name, next.key)
         }}
       >
         <GripVertical size={16} />
       </button>
     )
+
+  // While reordering, a stack moves as one row: its services are hidden
+  const showServices = (stack: StackGroup) => !onReorder && !collapsed.has(stack.name)
+
+  const cardOf = (c: ContainerInfo, nested?: StackColor) => (
+    <ContainerCard
+      key={c.id}
+      container={c}
+      hostIp={hostIp}
+      hostCpus={hostCpus}
+      advanced={advanced}
+      busy={busyIds.has(c.id)}
+      checking={checkingIds.has(c.id)}
+      onMenu={(x, y) => handlers.onMenu(c, x, y)}
+      onAutostart={(e) => handlers.onAutostart(c.id, e)}
+      onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
+      onUpdate={() => handlers.onUpdate(c.id)}
+      onCopy={handlers.onCopy}
+      grip={nested ? undefined : grip(c.name)}
+      dragging={!nested && dragName === c.name}
+      nested={nested}
+    />
+  )
+
+  const rowOf = (c: ContainerInfo, nested?: StackColor) => (
+    <ContainerRow
+      key={c.id}
+      container={c}
+      hostIp={hostIp}
+      hostCpus={hostCpus}
+      advanced={advanced}
+      busy={busyIds.has(c.id)}
+      checking={checkingIds.has(c.id)}
+      onMenu={(x, y) => handlers.onMenu(c, x, y)}
+      onAutostart={(e) => handlers.onAutostart(c.id, e)}
+      onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
+      onUpdate={() => handlers.onUpdate(c.id)}
+      onCopy={handlers.onCopy}
+      grip={nested ? undefined : grip(c.name)}
+      dragging={!nested && dragName === c.name}
+      nested={nested}
+    />
+  )
+
+  const stackProps = (stack: StackGroup, key: string) => ({
+    stack,
+    advanced,
+    hostIp,
+    hostCpus,
+    onAutostart: (enabled: boolean) => onStackAutostart(stack, enabled),
+    collapsed: !showServices(stack),
+    busy: busyStacks.has(stack.name),
+    onToggle: () => onToggleStack(stack.name),
+    onMenu: (x: number, y: number) => onStackMenu(stack, x, y),
+    onUpdate: () => onStackUpdate(stack),
+    grip: grip(key),
+    dragging: dragName === key,
+  })
 
   const heads = [
     'Application',
@@ -301,26 +380,17 @@ export default function ContainerTable({
           ))}
 
         {!loading &&
-          containers.map((c) => (
-            <ContainerCard
-              key={c.id}
-              container={c}
-              hostIp={hostIp}
-              hostCpus={hostCpus}
-              advanced={advanced}
-              busy={busyIds.has(c.id)}
-              checking={checkingIds.has(c.id)}
-              onMenu={(x, y) => handlers.onMenu(c, x, y)}
-              onAutostart={(e) => handlers.onAutostart(c.id, e)}
-              onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
-              onUpdate={() => handlers.onUpdate(c.id)}
-              onCopy={handlers.onCopy}
-              grip={grip(c.name)}
-              dragging={dragName === c.name}
-            />
-          ))}
+          items.map((item) =>
+            item.kind === 'container' ? (
+              cardOf(item.container)
+            ) : (
+              <StackCard key={item.key} {...stackProps(item.stack, item.key)}>
+                {item.stack.containers.length > 0 && item.stack.containers.map((c) => cardOf(c, item.stack.color))}
+              </StackCard>
+            ),
+          )}
 
-        {!loading && containers.length === 0 && (
+        {!loading && items.length === 0 && (
           <div className="rounded-2xl border border-line bg-surface px-4 py-16 text-center shadow-sm">
             <Logo size={56} className="mx-auto block w-fit opacity-40 grayscale" />
             <p className="mt-3 text-sm font-medium">{emptyMessage}</p>
@@ -361,26 +431,18 @@ export default function ContainerTable({
                 ))}
 
               {!loading &&
-                containers.map((c) => (
-                  <ContainerRow
-                    key={c.id}
-                    container={c}
-                    hostIp={hostIp}
-                    hostCpus={hostCpus}
-                    advanced={advanced}
-                    busy={busyIds.has(c.id)}
-                    checking={checkingIds.has(c.id)}
-                    onMenu={(x, y) => handlers.onMenu(c, x, y)}
-                    onAutostart={(e) => handlers.onAutostart(c.id, e)}
-                    onCheckUpdate={() => handlers.onCheckUpdate(c.id)}
-                    onUpdate={() => handlers.onUpdate(c.id)}
-                    onCopy={handlers.onCopy}
-                    grip={grip(c.name)}
-                    dragging={dragName === c.name}
-                  />
-                ))}
+                items.map((item) =>
+                  item.kind === 'container' ? (
+                    rowOf(item.container)
+                  ) : (
+                    <Fragment key={item.key}>
+                      <StackHeaderRow {...stackProps(item.stack, item.key)} />
+                      {showServices(item.stack) && item.stack.containers.map((c) => rowOf(c, item.stack.color))}
+                    </Fragment>
+                  ),
+                )}
 
-              {!loading && containers.length === 0 && (
+              {!loading && items.length === 0 && (
                 <tr>
                   <td colSpan={heads.length} className="px-4 py-16 text-center">
                     <Logo size={56} className="mx-auto block w-fit opacity-40 grayscale" />
