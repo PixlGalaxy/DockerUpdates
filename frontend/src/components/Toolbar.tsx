@@ -1,6 +1,9 @@
 import {
   CloudDownload,
+  Layers,
   LoaderCircle,
+  Lock,
+  LockOpen,
   Pause,
   Play,
   Plus,
@@ -24,9 +27,24 @@ interface TopBarProps {
   lastUpdated: Date | null
   refreshing: boolean
   onRefresh: () => void
+  /** The order of the list can be changed (lock open) */
+  orderUnlocked: boolean
+  orderSaving: boolean
+  onToggleOrder: () => void
 }
 
-export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, refreshing, onRefresh }: TopBarProps) {
+export function TopBar({
+  search,
+  onSearch,
+  advanced,
+  onAdvanced,
+  lastUpdated,
+  refreshing,
+  onRefresh,
+  orderUnlocked,
+  orderSaving,
+  onToggleOrder,
+}: TopBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="relative w-full sm:max-w-xs">
@@ -36,7 +54,8 @@ export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, re
           value={search}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="Search name, image, IP…"
-          className="h-9 w-full rounded-lg border border-line bg-surface pr-8 pl-9 text-sm shadow-xs placeholder:text-muted focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 focus:outline-none"
+          disabled={orderUnlocked}
+          className="h-9 w-full rounded-lg border border-line bg-surface pr-8 pl-9 text-sm shadow-xs placeholder:text-muted focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 focus:outline-none disabled:opacity-50"
         />
         {search && (
           <button
@@ -56,7 +75,31 @@ export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, re
       </label>
 
       <div className="ml-auto flex items-center gap-1 text-xs text-muted">
-        <span className="hidden sm:inline">Right-click a container for more actions</span>
+        {orderUnlocked ? (
+          <span
+            className="font-medium text-rose-600 dark:text-rose-400"
+            title="Drag a container in or out of a folder to add or remove it. Hold it over another container for a second to make a folder."
+          >
+            Drag to move · hold over a container to make a folder · lock to save
+          </span>
+        ) : (
+          <span className="hidden sm:inline">Right-click a container for more actions</span>
+        )}
+        <button
+          type="button"
+          onClick={onToggleOrder}
+          disabled={orderSaving}
+          aria-pressed={orderUnlocked}
+          aria-label={orderUnlocked ? 'Lock and save the container order' : 'Unlock to reorder the containers'}
+          title={orderUnlocked ? 'Lock and save the order' : 'Unlock to reorder the containers'}
+          className={`ml-1 inline-flex size-8 items-center justify-center rounded-lg border-b-2 transition-colors focus-visible:outline-2 focus-visible:outline-sky-500 disabled:opacity-60 ${
+            orderUnlocked
+              ? 'border-rose-500 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 dark:text-rose-400'
+              : 'border-transparent text-emerald-600 hover:bg-surface-2 dark:text-emerald-400'
+          }`}
+        >
+          {orderSaving ? <LoaderCircle size={15} className="animate-spin" /> : orderUnlocked ? <LockOpen size={15} /> : <Lock size={15} />}
+        </button>
         <span className="mx-2 hidden h-4 w-px bg-line sm:inline-block" />
         {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString()}</span>}
         <IconButton label="Refresh" onClick={onRefresh}>
@@ -69,10 +112,11 @@ export function TopBar({ search, onSearch, advanced, onAdvanced, lastUpdated, re
 
 // ---------- Bottom bar: colored bulk actions (Unraid style) ----------
 
-type Tone = 'sky' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'violet'
+type Tone = 'sky' | 'fuchsia' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'violet'
 
 const TONES: Record<Tone, string> = {
   sky: 'border-sky-500/40 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300',
+  fuchsia: 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-700 hover:bg-fuchsia-500/20 dark:text-fuchsia-300',
   emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
   rose: 'border-rose-500/40 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-300',
   amber: 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
@@ -118,17 +162,21 @@ interface ActionBarProps {
   busy: string | null
   updates: number
   onAdd: () => void
+  onAddCompose: () => void
   onBulk: (action: 'start' | 'stop' | 'pause' | 'unpause') => void
   onCheckUpdates: () => void
   onUpdateAll: () => void
 }
 
-export function ActionBar({ busy, updates, onAdd, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
+export function ActionBar({ busy, updates, onAdd, onAddCompose, onBulk, onCheckUpdates, onUpdateAll }: ActionBarProps) {
   const locked = busy !== null
   return (
     <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
       <BarButton tone="sky" icon={<Plus size={14} />} onClick={onAdd}>
         Add container
+      </BarButton>
+      <BarButton tone="fuchsia" icon={<Layers size={14} />} title="Create a stack from a docker-compose file" onClick={onAddCompose}>
+        Add compose
       </BarButton>
       <span className="mx-1 hidden h-6 w-px bg-line sm:block" />
       <BarButton tone="emerald" icon={<Play size={14} />} loading={busy === 'start'} disabled={locked} onClick={() => onBulk('start')}>

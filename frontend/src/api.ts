@@ -1,11 +1,14 @@
 import type {
   BulkSummary,
   CheckResult,
+  ContainerFolder,
+  GroupIcon,
   ContainerStats,
   CheckSummary,
   ContainerAction,
   ContainersResponse,
   ContainerSpec,
+  CpuLayout,
   AutoUpdateStatus,
   CleanupPreview,
   CleanupResult,
@@ -18,6 +21,8 @@ import type {
   RunResult,
   Schedule,
   SchedulePreview,
+  StackAction,
+  StackFile,
   Settings,
   TemplateSummary,
   UpdateAllSummary,
@@ -78,6 +83,16 @@ export const api = {
   logout: () => post<Ok>('/api/auth/logout'),
 
   list: () => request<ContainersResponse>('/api/containers'),
+  saveOrder: (names: string[]) =>
+    request<{ order: string[] }>('/api/containers/order', { method: 'PUT', body: JSON.stringify({ names }) }),
+  /** key: "stack:<project>" / "folder:<id>"; url '' removes the icon */
+  setGroupIcon: (key: string, url: string) =>
+    request<{ groupIcons: Record<string, GroupIcon> }>(`/api/groups/${encodeURIComponent(key)}/icon`, {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+  saveFolders: (folders: ContainerFolder[]) =>
+    request<{ folders: ContainerFolder[] }>('/api/folders', { method: 'PUT', body: JSON.stringify({ folders }) }),
   stats: () => request<Record<string, ContainerStats>>('/api/stats'),
   action: (id: string, action: ContainerAction) =>
     post<Ok>(`/api/containers/${id}/${action}`),
@@ -93,6 +108,8 @@ export const api = {
   startUpdate: (ids?: string[]) => post<{ id: string; title: string }>('/api/operations/update', { ids }),
   bulk: (action: ContainerAction) => post<BulkSummary>(`/api/containers/bulk/${action}`),
   create: (spec: ContainerSpec) => post<{ id: string }>('/api/containers', spec),
+  /** Validates the spec, then installs the container with a live log */
+  startCreate: (spec: ContainerSpec) => post<{ id: string; title: string }>('/api/operations/create', spec),
   spec: (id: string) => request<ContainerSpec>(`/api/containers/${id}/spec`),
   refreshIcon: (id: string) => post<{ reset: boolean }>(`/api/containers/${id}/refresh-icon`),
   edit: (id: string, spec: ContainerSpec) =>
@@ -110,6 +127,22 @@ export const api = {
     post<{ summary: string[] }>('/api/extra-params/check', { extraParams }),
   host: () => request<HostInfo>('/api/host'),
   hostUsage: () => request<HostUsage>('/api/host/usage'),
+  hostCpus: () => request<CpuLayout>('/api/host/cpus'),
+
+  stack: (name: string) => request<StackFile>(`/api/stacks/${encodeURIComponent(name)}`),
+  /** Validates and saves the compose file, then deploys the stack with a live log */
+  startStackDeploy: (stack: StackFile & { isNew: boolean }) =>
+    post<{ id: string; title: string }>('/api/operations/stack-deploy', stack),
+  stackAction: (name: string, action: StackAction) =>
+    post<BulkSummary>(`/api/stacks/${encodeURIComponent(name)}/${action}`),
+  setStackColor: (name: string, color: string | null) =>
+    request<{ stackColors: Record<string, string> }>(`/api/stacks/${encodeURIComponent(name)}/color`, {
+      method: 'PUT',
+      body: JSON.stringify({ color }),
+    }),
+  setStackAutostart: (name: string, enabled: boolean) =>
+    post<BulkSummary>(`/api/stacks/${encodeURIComponent(name)}/autostart`, { enabled }),
+  checkStackUpdates: (name: string) => post<CheckSummary>(`/api/stacks/${encodeURIComponent(name)}/check-updates`),
 
   history: (container?: string) =>
     request<HistoryEntry[]>(`/api/history${container ? `?container=${encodeURIComponent(container)}` : ''}`),

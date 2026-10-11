@@ -103,6 +103,21 @@ export function audit(req, message) {
   console.log(`[audit] ${new Date().toISOString()} ip=${ip}${via} ${message}`);
 }
 
+/**
+ * Audit line for events any client can trigger without signing in (blocked origins, refused
+ * console upgrades): at most one per address per minute, so a flood cannot push real audit
+ * entries out of the in-memory log shown in Admin -> Server logs.
+ */
+const lastUnauthAudit = new Map(); // ip -> time
+export function auditThrottled(req, message) {
+  const ip = String(req.ip ?? req.socket?.remoteAddress ?? '-');
+  const now = Date.now();
+  if ((lastUnauthAudit.get(ip) ?? 0) > now - 60_000) return;
+  lastUnauthAudit.set(ip, now);
+  if (lastUnauthAudit.size > 5000) lastUnauthAudit.clear();
+  audit(req, message);
+}
+
 function readCookie(req, name) {
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [k, ...v] = part.trim().split('=');

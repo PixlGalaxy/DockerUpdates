@@ -14,7 +14,7 @@ async function load() {
 
 /**
  * entry: { container, image, from, to, kind, trigger: 'manual'|'auto', result: 'success'|'failed'|'scheduled',
- *          error?, durationMs?, type?: 'update'|'edit' }
+ *          error?, durationMs?, type?: 'update'|'edit', stack?: compose project (managed stacks) }
  */
 export async function addHistory(entry) {
   await load();

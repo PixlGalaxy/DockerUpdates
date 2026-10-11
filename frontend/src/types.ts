@@ -65,8 +65,41 @@ export interface ContainerInfo {
   memLimitConfigured: number
   /** CPU limit in cores (0 = no limit) */
   cpuLimit: number
+  /** Cores the container is pinned to (--cpuset-cpus), 0 = all */
+  cpusetCount: number
   /** URL of the cached icon, if any */
   icon?: string
+  /** Compose stack it belongs to; `managed`: its compose file lives in DockerUpdates */
+  stack?: StackRef
+}
+
+export interface StackRef {
+  project: string
+  service: string
+  managed: boolean
+}
+
+/** Custom icon of a stack or folder: the URL as typed, and the cached file to show */
+export interface GroupIcon {
+  url: string
+  icon?: string
+}
+
+/** Folder of standalone containers (created by dropping a container on another) */
+export interface ContainerFolder {
+  id: string
+  name: string
+  /** Color id of the palette; none = one from its id */
+  color?: string
+  /** Container names, in the order they were added */
+  containers: string[]
+}
+
+/** Compose file of a managed stack */
+export interface StackFile {
+  name: string
+  yaml: string
+  env: string
 }
 
 export interface CheckResult {
@@ -94,6 +127,22 @@ export interface UpdateAllSummary {
   selfUpdate: boolean
 }
 
+/** Result of a container installed from the Add container form */
+export interface InstallResult {
+  name: string
+  id: string
+}
+
+/** A long-running operation followed live (update log / install log) */
+export type OperationKind = 'update' | 'install'
+export type OperationResult = UpdateAllSummary | InstallResult
+
+export interface LiveOperation {
+  id: string
+  title: string
+  kind: OperationKind
+}
+
 export interface BulkSummary {
   affected: number
   failed: number
@@ -110,7 +159,19 @@ export interface ContainersResponse {
   /** Hostname of the Docker host */
   hostName: string
   containers: ContainerInfo[]
+  /** Managed compose stacks (also the ones with no container right now) */
+  stacks: string[]
+  /** Color chosen for each stack (project -> color id); the others get one from their name */
+  stackColors: Record<string, string>
+  /** Folders of standalone containers */
+  folders: ContainerFolder[]
+  /** Icons of stacks and folders ("stack:<project>" / "folder:<id>") */
+  groupIcons: Record<string, GroupIcon>
+  /** Custom order of the list (container names and "stack:<name>", first shown first); others go after, A-Z */
+  order: string[]
 }
+
+export type StackAction = 'start' | 'stop' | 'restart' | 'down'
 
 export type ContainerAction =
   | 'start'
@@ -137,6 +198,8 @@ export interface ContainerSpec {
   iconUrl: string
   /** Memory limit in bytes (0 = no limit) */
   memory: number
+  /** CPU pinning, --cpuset-cpus format ("0-3,8"; '' = every CPU) */
+  cpuset: string
   /** Fixed IPv4 on a user-defined network ('' = automatic) */
   ip: string
 }
@@ -173,6 +236,21 @@ export interface NetworkInfo {
   gateway: string | null
   /** User-defined network: a fixed IP can be set */
   fixedIp: boolean
+}
+
+/** CPUs of the Docker host for the CPU pinning picker */
+export interface CpuLayout {
+  /** CPUs Docker can use */
+  cpus: number
+  /** Physical cores, each with its CPU ids: first = the core, next ones = its hyper-threads */
+  cores: number[][]
+  sockets: number
+  threadsPerCore: number
+  /** 'topology': real core / thread pairs; 'count': only the number of CPUs is known */
+  source: 'topology' | 'count'
+  model: string
+  /** Docker runs in a virtual machine: these are vCPUs */
+  virtual: boolean
 }
 
 export interface HostInfo {

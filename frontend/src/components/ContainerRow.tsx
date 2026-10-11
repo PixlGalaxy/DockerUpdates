@@ -15,8 +15,9 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { ContainerInfo, VolumeMapping } from '../types'
-import { formatBytes, gradientFor, isActive, splitImage, timeAgo } from '../utils'
+import type { StackColor } from '../stackColors'
+import type { ContainerInfo, PortMapping, VolumeMapping } from '../types'
+import { formatBytes, gradientFor, isActive, MERGE_TARGET, splitImage, timeAgo } from '../utils'
 import { Button, Chip, IconButton, Meter, Toggle } from './ui'
 
 interface Props {
@@ -24,12 +25,24 @@ interface Props {
   hostIp: string
   advanced: boolean
   busy: boolean
+  /** The update check of this container is running */
+  checking?: boolean
   /** Opens the container menu at the given screen position */
   onMenu: (x: number, y: number) => void
   onAutostart: (enabled: boolean) => void
   onCheckUpdate: () => void
   onUpdate: () => void
   onCopy: (text: string) => void
+  /** Drag handle shown while the order is unlocked */
+  grip?: ReactNode
+  /** This container is being dragged */
+  dragging?: boolean
+  /** Cores of the Docker host (scale of the CPU bar) */
+  hostCpus?: number
+  /** Shown inside a stack or folder (its color): indented, moves with its group */
+  nested?: StackColor
+  /** Inside this folder (id): while reordering it can be dragged on its own, in or out of the folder */
+  folderId?: string
 }
 
 const STATE: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -44,6 +57,8 @@ const STATE: Record<string, { label: string; dot: string; text: string; pulse?: 
 const td = 'px-3 py-3.5 align-middle'
 // Volume mappings collapse into "+N more" only when they would make the row taller than this
 const VOLUMES_MAX_PX = 64
+// Port lists longer than this show PORTS_MAX - 1 lines plus a "+N more" toggle
+const PORTS_MAX = 4
 
 const HEALTH = {
   healthy: { label: 'Healthy', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
@@ -98,16 +113,21 @@ export default function ContainerRow({
   hostIp,
   advanced,
   busy,
+  checking,
   onMenu,
   onAutostart,
   onCheckUpdate,
   onUpdate,
   onCopy,
+  grip,
+  dragging,
+  hostCpus,
+  nested,
+  folderId,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
   const hostNet = c.network === 'host'
-  const published = c.ports.filter((p) => p.hostPort)
 
   const openMenuHere = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -116,17 +136,21 @@ export default function ContainerRow({
 
   return (
     <tr
+      data-order-id={nested && !folderId ? undefined : c.name}
+      data-folder={folderId}
       onContextMenu={(e) => {
         // Keep the native menu on links and text fields
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${busy ? 'opacity-70' : ''}`}
+      className={`group border-t border-line transition-colors hover:bg-surface-2/60 ${MERGE_TARGET} ${nested ? nested.row : ''} ${busy ? 'opacity-70' : ''} ${dragging ? 'bg-rose-500/5 outline-2 -outline-offset-4 outline-dashed outline-rose-500/50 [&>td]:opacity-30' : ''}`}
     >
       {/* Application */}
-      <td className={td}>
+      <td className={`${td} ${nested ? 'relative pl-7' : ''}`}>
+        {nested && <span aria-hidden className={`absolute inset-y-0 left-3.5 w-0.5 ${nested.line}`} />}
         <div className="flex items-center gap-3">
+          {grip}
           <AppIcon container={c} onClick={openMenuHere} />
           <div className="max-w-60 min-w-0">
             <div className="flex items-center gap-2">
@@ -154,7 +178,7 @@ export default function ContainerRow({
 
       {/* Version */}
       <td className={td}>
-        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} />
+        <UpdateInfo container={c} busy={busy} checking={checking} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} />
       </td>
 
       {advanced && (
@@ -169,49 +193,7 @@ export default function ContainerRow({
         </>
       )}
 
-      {/* Container port */}
-      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
-        {hostNet ? (
-          <span className="text-muted">all</span>
-        ) : c.ports.length === 0 ? (
-          <span className="text-muted">—</span>
-        ) : (
-          c.ports.map((p) => (
-            <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
-              {p.containerPort}:{p.protocol.toUpperCase()}
-            </div>
-          ))
-        )}
-      </td>
-
-      {/* LAN IP:Port */}
-      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
-        {hostNet ? (
-          <span>{hostIp}</span>
-        ) : published.length === 0 ? (
-          <span className="text-muted">—</span>
-        ) : (
-          published.map((p) => (
-            <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
-              {p.protocol === 'tcp' ? (
-                <a
-                  href={`http://${hostIp}:${p.hostPort}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
-                >
-                  {hostIp}:{p.hostPort}
-                  <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
-                </a>
-              ) : (
-                <span>
-                  {hostIp}:{p.hostPort}
-                </span>
-              )}
-            </div>
-          ))
-        )}
-      </td>
+      <PortCells ports={c.ports} hostNet={hostNet} hostIp={hostIp} />
 
       {advanced && (
         <td className={`${td} min-w-52`}>
@@ -225,7 +207,7 @@ export default function ContainerRow({
 
       {/* Resources */}
       <td className={`${td} w-44 min-w-44`}>
-        <Resources container={c} />
+        <Resources container={c} hostCpus={hostCpus} />
       </td>
 
       {/* Autostart */}
@@ -248,11 +230,17 @@ export function ContainerCard({
   hostIp,
   advanced,
   busy,
+  checking,
   onMenu,
   onAutostart,
   onCheckUpdate,
   onUpdate,
   onCopy,
+  grip,
+  dragging,
+  hostCpus,
+  nested,
+  folderId,
 }: Props) {
   const active = isActive(c)
   const { repo } = splitImage(c.image)
@@ -267,14 +255,17 @@ export function ContainerCard({
 
   return (
     <article
+      data-order-id={nested && !folderId ? undefined : c.name}
+      data-folder={folderId}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest('a, input, textarea')) return
         e.preventDefault()
         onMenu(e.clientX, e.clientY)
       }}
-      className={`group overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${busy ? 'opacity-70' : ''}`}
+      className={`group overflow-hidden rounded-2xl border bg-surface shadow-sm ${MERGE_TARGET} ${busy ? 'opacity-70' : ''} ${dragging ? 'border-dashed border-rose-500/60 bg-rose-500/5 shadow-none [&>*]:opacity-30' : 'border-line'}`}
     >
       <div className="flex items-start gap-3 p-4 pb-3">
+        {grip}
         <AppIcon container={c} onClick={openMenuHere} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -303,7 +294,7 @@ export function ContainerCard({
       </div>
 
       <div className="space-y-3 px-4 pb-4">
-        <UpdateInfo container={c} busy={busy} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} inline />
+        <UpdateInfo container={c} busy={busy} checking={checking} onUpdate={onUpdate} onCheckUpdate={onCheckUpdate} inline />
 
         {(hostNet || c.ports.length > 0) && (
           <CardField label="Ports">
@@ -359,7 +350,7 @@ export function ContainerCard({
           </CardField>
         )}
 
-        {c.state === 'running' && <Resources container={c} wide />}
+        {c.state === 'running' && <Resources container={c} hostCpus={hostCpus} wide />}
       </div>
 
       <div className="flex items-center gap-3 border-t border-line bg-surface-2/40 px-4 py-2.5 text-xs">
@@ -441,12 +432,15 @@ function StateLabel({ container: c }: { container: ContainerInfo }) {
 function UpdateInfo({
   container: c,
   busy,
+  checking,
   onUpdate,
   onCheckUpdate,
   inline,
 }: {
   container: ContainerInfo
   busy: boolean
+  /** The update check of this container is running */
+  checking?: boolean
   onUpdate: () => void
   onCheckUpdate: () => void
   /** Badge and tag side by side (mobile card) instead of stacked */
@@ -504,19 +498,29 @@ function UpdateInfo({
           <Chip>{tag}</Chip>
         )}
         <IconButton
-          label="Check for update"
-          className="h-auto! w-[22px]! self-stretch rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300"
-          disabled={busy || c.updateStatus === 'local'}
+          label={checking ? 'Checking for update…' : 'Check for update'}
+          // Still disabled while checking, but fully visible so the spin reads as progress
+          className={`h-auto! w-[22px]! self-stretch rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:text-indigo-300 ${checking ? 'disabled:opacity-100' : ''}`}
+          disabled={busy || checking || c.updateStatus === 'local'}
           onClick={onCheckUpdate}
         >
-          <RefreshCw size={12} />
+          <RefreshCw size={12} className={checking ? 'animate-spin' : undefined} />
         </IconButton>
       </div>
     </div>
   )
 }
 
-function Resources({ container: c, wide }: { container: ContainerInfo; wide?: boolean }) {
+export function Resources({ container: c, wide, hostCpus = 0 }: { container: ContainerInfo; wide?: boolean; hostCpus?: number }) {
+  // CPU % is per core, like `docker stats`: 100% = one full core, so 140% = 1.4 cores. The bar
+  // shows it against the cores the container can really use (its limit, its pinned cores or
+  // every core of the host), so it only fills up when the container uses all of them.
+  const cores = Math.min(...[c.cpuLimit, c.cpusetCount, hostCpus].filter((n) => n > 0), Infinity)
+  const capacity = Number.isFinite(cores) ? cores : 1
+  const cpuPct = c.cpuPercent / capacity
+  const used = c.cpuPercent / 100
+  const fmtCores = (n: number) => String(Number(n.toFixed(n < 1 ? 2 : 1)))
+  const cpuTitle = `${fmtCores(Math.round(used * 100) / 100)} of ${fmtCores(capacity)} core${capacity === 1 ? '' : 's'} (${Math.min(100, cpuPct).toFixed(0)}% of the CPU available to this container). 100% = one full core.`
   // Prefer the limit configured on the container; otherwise Docker reports the host RAM
   const memLimit = c.memLimitConfigured || c.memLimit
   const memPct = memLimit ? (c.memUsage / memLimit) * 100 : 0
@@ -526,15 +530,22 @@ function Resources({ container: c, wide }: { container: ContainerInfo; wide?: bo
         <div className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-muted">
             CPU
-            {c.cpuLimit > 0 && (
-              <span className="ml-1 text-[10px] text-muted/80" title="CPU limit configured on the container">
-                max {c.cpuLimit}
+            {(c.cpuLimit > 0 || c.cpusetCount > 0) && (
+              <span
+                className="ml-1 text-[10px] text-muted/80"
+                title={c.cpuLimit > 0 && c.cpuLimit <= (c.cpusetCount || Infinity) ? 'CPU limit configured on the container' : 'Cores the container is pinned to (--cpuset-cpus)'}
+              >
+                max {fmtCores(capacity)}
               </span>
             )}
           </span>
-          <span className="font-medium tabular-nums">{c.cpuPercent.toFixed(1)}%</span>
+          <span className="font-medium tabular-nums" title={cpuTitle}>
+            {c.cpuPercent.toFixed(1)}%
+          </span>
         </div>
-        <Meter value={c.cpuPercent} tone="cpu" />
+        <div title={cpuTitle}>
+          <Meter value={cpuPct} tone="cpu" />
+        </div>
       </div>
       <div>
         <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -561,6 +572,102 @@ function Resources({ container: c, wide }: { container: ContainerInfo; wide?: bo
     </div>
   ) : (
     <span className="text-xs text-muted">—</span>
+  )
+}
+
+/**
+ * "Container port" and "LAN IP:Port" cells of a container, or of a whole stack (the ports of all
+ * its services). Long lists collapse into "+N more"; both cells expand together.
+ */
+export function PortCells({ ports, hostNet, hostIp }: { ports: PortMapping[]; hostNet: boolean; hostIp: string }) {
+  const [portsOpen, setPortsOpen] = useState(false)
+  const published = ports.filter((p) => p.hostPort)
+  return (
+    <>
+      {/* Container port */}
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
+        {hostNet ? (
+          <span className="text-muted">all</span>
+        ) : ports.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <PortList
+            items={ports}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.containerPort}/${p.protocol}`} className="leading-relaxed">
+                {p.containerPort}:{p.protocol.toUpperCase()}
+              </div>
+            )}
+          />
+        )}
+      </td>
+
+      {/* LAN IP:Port */}
+      <td className={`${td} font-mono text-[11px] whitespace-nowrap`}>
+        {hostNet ? (
+          <span>{hostIp}</span>
+        ) : published.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <PortList
+            items={published}
+            expanded={portsOpen}
+            onToggle={() => setPortsOpen((o) => !o)}
+            render={(p) => (
+              <div key={`${p.hostPort}/${p.protocol}`} className="leading-relaxed">
+                {p.protocol === 'tcp' ? (
+                  <a
+                    href={`http://${hostIp}:${p.hostPort}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group/link inline-flex items-center gap-0.5 text-sky-700 hover:underline dark:text-sky-300"
+                  >
+                    {hostIp}:{p.hostPort}
+                    <ArrowUpRight size={11} className="opacity-0 transition-opacity group-hover/link:opacity-100" />
+                  </a>
+                ) : (
+                  <span>
+                    {hostIp}:{p.hostPort}
+                  </span>
+                )}
+              </div>
+            )}
+          />
+        )}
+      </td>
+    </>
+  )
+}
+
+/** Port lines cut to PORTS_MAX - 1 with a "+N more" toggle when the list is longer than PORTS_MAX. */
+function PortList<T>({
+  items,
+  expanded,
+  onToggle,
+  render,
+}: {
+  items: T[]
+  expanded: boolean
+  onToggle: () => void
+  render: (item: T) => ReactNode
+}) {
+  const hidden = items.length > PORTS_MAX ? items.length - (PORTS_MAX - 1) : 0
+  return (
+    <>
+      {(expanded || !hidden ? items : items.slice(0, PORTS_MAX - 1)).map(render)}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mt-1 inline-flex items-center gap-1 font-sans text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          {expanded ? 'Show less' : `+${hidden} more`}
+          <ChevronDown size={12} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+    </>
   )
 }
 

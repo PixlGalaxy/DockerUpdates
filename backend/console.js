@@ -3,7 +3,7 @@
 // Client -> server: text JSON { type: 'input', data } | { type: 'resize', cols, rows }
 // Server -> client: binary terminal output, text JSON { type: 'error' | 'exit', message? }
 import { WebSocketServer } from 'ws';
-import { audit } from './auth.js';
+import { audit, auditThrottled } from './auth.js';
 import { docker } from './docker.js';
 import { consoleKeepalive } from './runtimeConfig.js';
 
@@ -35,7 +35,9 @@ export function attachConsole(server, auth) {
     // Refused connections are accepted only to tell the browser why, then closed right away:
     // nothing runs and no data is sent.
     const refuse = (code, message, logLine) => {
-      audit({ ip: auth.clientIp(req) }, `console refused: ${logLine} (origin=${req.headers.origin ?? '-'} host=${req.headers.host ?? '-'})`);
+      // Reachable without a session: logged at most once per address per minute
+      const origin = String(req.headers.origin ?? '-').slice(0, 200);
+      auditThrottled({ ip: auth.clientIp(req) }, `console refused: ${logLine} (origin=${origin} host=${req.headers.host ?? '-'})`);
       wss.handleUpgrade(req, socket, head, (ws) => {
         ws.send(JSON.stringify({ type: 'error', message }));
         ws.close(code, message.slice(0, 120));

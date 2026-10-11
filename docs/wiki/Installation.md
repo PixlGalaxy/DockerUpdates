@@ -84,6 +84,7 @@ Add a container from the Docker tab with:
 | `/var/run/docker.sock` | Yes | Lets DockerUpdates control Docker. This is root-level access to the host: see [Security](Security.md) |
 | `/app/backend/data` | Strongly recommended | Settings, notification channels, update history, templates, icons, login sessions, the login changed in the UI. Without it, all of that is lost every time the container is recreated |
 | `~/.docker/config.json` (read-only) | Optional | Reuses your `docker login` for [private registries](Private-Registries.md). Remove the line if the file does not exist |
+| Stacks folder, same path on both sides (e.g. `/opt/stacks:/opt/stacks`, with `STACKS_DIR=/opt/stacks`) | Optional | Only for [compose stacks](Compose-Stacks.md) whose compose file uses relative paths (`./data`). Without it, stacks are saved in the data volume and compose files with relative paths are refused |
 
 ## 3. Sign in
 

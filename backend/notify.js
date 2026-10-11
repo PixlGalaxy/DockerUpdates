@@ -176,7 +176,7 @@ export async function notify(event, payload = {}) {
 
 /** Sends a test message to one channel and reports the result (used by the Settings page). */
 export async function testChannel(name, host) {
-  const ch = CHANNELS[name];
+  const ch = Object.hasOwn(CHANNELS, name) ? CHANNELS[name] : null;
   if (!ch) throw Object.assign(new Error('Unknown channel'), { status: 400 });
   const cfg = getSettings().notifications[name];
   if (!ch.ready(cfg)) throw Object.assign(new Error('Fill in and save this channel first'), { status: 400 });

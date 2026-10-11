@@ -18,11 +18,16 @@ import { detectLan, enableLan, lanStatus } from './macvlan.js';
 import { streamLogs } from './logs.js';
 import { notify, testChannel } from './notify.js';
 import { startOperation, streamOperation } from './operations.js';
+import { getFolders, saveFolders } from './folders.js';
+import { getOrder, saveOrder } from './order.js';
+import { cpuLayout, detectCpuLayout } from './cpuLayout.js';
 import * as scheduler from './scheduler.js';
 import { onConfigChange, publicConfig, trustProxySetting as currentTrustProxy, updateConfig } from './runtimeConfig.js';
 import { loadSettings, publicSettings, updateSettings } from './settings.js';
+import { getStackColors, setStackColor } from './stackColors.js';
+import { getStack, listStacks } from './stacks.js';
 import { deleteTemplate, getTemplate, listTemplates } from './templates.js';
-import { iconFile, initIcons, resetAutoIcon } from './icons.js';
+import { groupIcons, iconFile, initIcons, resetAutoIcon, setGroupIcon } from './icons.js';
 import {
   auditLog,
   isSameOrigin,
@@ -63,7 +68,9 @@ const handle = (fn) => async (req, res) => {
     // Never forward a Docker API 401: the frontend treats 401 as "session expired".
     const code = err.status || (err.statusCode && err.statusCode !== 401 ? err.statusCode : 500);
     if (code >= 500) console.error(err);
-    res.status(code).json({ error: err.json?.message ?? err.message });
+    // Docker errors carry a readable message (err.json); unexpected 500s stay in the server log
+    const message = err.json?.message ?? (code >= 500 && !err.status ? 'Internal server error' : err.message);
+    res.status(code).json({ error: message });
   }
 };
 
@@ -84,12 +91,30 @@ app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
   hostName: await dk.hostName(),
   containers: await dk.listContainers(),
+  // Managed compose stacks (also the ones with no container right now)
+  stacks: await listStacks(),
+  stackColors: await getStackColors(),
+  folders: await getFolders(),
+  // Icons of stacks and folders ("stack:<project>" / "folder:<id>" -> { url, icon })
+  groupIcons: await groupIcons(),
+  order: await getOrder(),
 })));
+// Custom order of the list (lock button): body { names: string[] }
+app.put('/api/containers/order', handle(async (req) => ({ order: await saveOrder(req.body?.names) })));
+// Icon of a stack or folder (:key = "stack:<project>" / "folder:<id>"): body { url } ('' removes it)
+app.put('/api/groups/:key/icon', handle(async (req) => {
+  await setGroupIcon(req.params.key, req.body?.url ?? '');
+  return { groupIcons: await groupIcons() };
+}));
+// Folders of containers: body { folders: [{ id, name, color?, containers: string[] }] } (the whole list)
+app.put('/api/folders', handle(async (req) => ({ folders: await saveFolders(req.body?.folders) })));
 app.post('/api/containers', handle(async (req) => ({ id: await dk.createContainer(req.body) })));
 // Live CPU / memory, polled every second by the UI
 app.get('/api/stats', handle(() => dk.getStats()));
 app.get('/api/host', handle(() => dk.hostInfo()));
 app.get('/api/host/usage', handle(() => hostUsage()));
+// CPUs of the Docker host and their hyper-thread pairs (CPU pinning picker)
+app.get('/api/host/cpus', handle(() => cpuLayout()));
 app.get('/api/networks', handle(() => dk.listNetworks()));
 app.get('/api/lan-network', handle(() => lanStatus()));
 app.post('/api/lan-network/detect', handle(() => detectLan()));
@@ -176,10 +201,40 @@ app.post('/api/operations/update', handle(async (req) => {
   });
   return { id, title };
 }));
+// body: container spec. Bad input is rejected here (the form shows it); the install itself runs with a live log
+app.post('/api/operations/create', handle(async (req) => {
+  const { run } = await dk.prepareCreate(req.body ?? {});
+  const title = 'Installing the container';
+  return { id: startOperation(title, (log) => run(log)), title };
+}));
+// body: { name, yaml, env?, isNew }. A file docker compose rejects is not saved (the editor shows why)
+app.post('/api/operations/stack-deploy', handle(async (req) => {
+  const { name, run } = await dk.prepareStackDeploy(req.body);
+  const title = req.body?.isNew ? 'Deploying the stack' : 'Redeploying the stack';
+  return {
+    id: startOperation(title, async (log) => {
+      const r = await run(log);
+      void dk.checkStackSoon(name).catch(() => {});
+      return r;
+    }),
+    title,
+  };
+}));
 app.get('/api/operations/:opId/stream', (req, res) => {
   if (!/^[a-f0-9-]{36}$/.test(req.params.opId)) return res.status(404).end();
   streamOperation(req, res);
 });
+
+// --- Compose stacks ---
+app.get('/api/stacks/:name', handle((req) => getStack(req.params.name)));
+// body: { color: string | null } (null = automatic color)
+app.put('/api/stacks/:name/color', handle(async (req) => ({
+  stackColors: await setStackColor(req.params.name, req.body?.color ?? null),
+})));
+app.post('/api/stacks/:name/autostart', handle((req) => dk.setStackAutostart(req.params.name, Boolean(req.body?.enabled))));
+app.post('/api/stacks/:name/check-updates', handle((req) => dk.checkStackUpdates(req.params.name)));
+// start | stop | restart | down (down: managed stacks only, removes the stack)
+app.post('/api/stacks/:name/:action', handle((req) => dk.stackAction(req.params.name, req.params.action)));
 
 // --- History, templates ---
 app.get('/api/history', handle((req) => listHistory({ container: req.query.container, limit: req.query.limit })));
@@ -259,6 +314,7 @@ await Promise.all([initIcons(), loadSettings()]);
 await scheduler.startScheduler();
 startHealthMonitor();
 startHostAddressDetection();
+void detectCpuLayout();
 
 const server = http.createServer(app);
 attachConsole(server, {

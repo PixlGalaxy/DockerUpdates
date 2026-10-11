@@ -261,7 +261,7 @@ function quote(value) {
  * Builds the Extra parameters string for an existing container.
  * `config` must already be stripped of image defaults (see userConfig in docker.js).
  */
-export function serializeExtraParams(config, host, { logDriver, skipMemory = false } = {}) {
+export function serializeExtraParams(config, host, { logDriver, skipMemory = false, skipCpuset = false } = {}) {
   const out = [];
   const add = (flag, value) => out.push(value === undefined ? `--${flag}` : `--${flag}=${quote(value)}`);
 
@@ -273,7 +273,7 @@ export function serializeExtraParams(config, host, { logDriver, skipMemory = fal
   if (host.MemoryReservation) add('memory-reservation', formatSize(host.MemoryReservation));
   if (host.NanoCpus) add('cpus', String(host.NanoCpus / 1e9));
   if (host.CpuShares) add('cpu-shares', host.CpuShares);
-  if (host.CpusetCpus) add('cpuset-cpus', host.CpusetCpus);
+  if (host.CpusetCpus && !skipCpuset) add('cpuset-cpus', host.CpusetCpus);
   if (host.RestartPolicy?.Name === 'on-failure' && host.RestartPolicy.MaximumRetryCount) {
     add('restart', `on-failure:${host.RestartPolicy.MaximumRetryCount}`);
   }

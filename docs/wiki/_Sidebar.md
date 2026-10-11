@@ -6,10 +6,12 @@
 - [Settings](Settings.md)
 
 **Features**
+- [Container list](Container-List.md)
 - [Automatic updates](Automatic-Updates.md)
 - [Notifications](Notifications.md)
 - [Private registries](Private-Registries.md)
 - [LAN network](LAN-Network.md)
+- [Compose stacks](Compose-Stacks.md)
 - [Admin Panel](Admin-Panel.md)
 
 **Operations**

@@ -1,4 +1,4 @@
-import type { ContainerInfo } from './types'
+import type { ContainerInfo, OperationResult } from './types'
 
 export function formatBytes(bytes: number): string {
   if (!bytes) return '0 B'
@@ -62,3 +62,15 @@ export function gradientFor(name: string): string {
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0
   return GRADIENTS[Math.abs(hash) % GRADIENTS.length]
 }
+
+/** Containers that failed in an operation result (an install has none: it fails as a whole) */
+export function failedCount(r?: OperationResult): number {
+  return r && 'failed' in r ? r.failed.length : 0
+}
+
+/**
+ * Look of a container / folder while another container is held over it to make a folder
+ * (the drag code sets data-merge: "hover" right away, "ready" after the hold time).
+ */
+export const MERGE_TARGET =
+  'data-[merge=hover]:bg-sky-500/5 data-[merge=ready]:bg-sky-500/10 data-[merge=ready]:outline-2 data-[merge=ready]:-outline-offset-2 data-[merge=ready]:outline-sky-500'
