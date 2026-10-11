@@ -284,25 +284,25 @@ function registerFailure(req, username) {
 // A failure only counts once its check has finished, so a burst of parallel attempts would all
 // reach scrypt before the lockout starts. Attempts still being checked are capped per address
 // and in total; extra ones are refused at once.
+// The per-address cap uses the client IP (req.ip, taken from X-Forwarded-For when the request
+// comes through a trusted proxy), never the proxy's own address: otherwise every visitor behind
+// Nginx would share two slots. A client faking X-Forwarded-For to get more slots still hits the
+// total cap.
 const MAX_INFLIGHT_PER_IP = 2;
 const MAX_INFLIGHT_TOTAL = 10;
-const inFlight = new Map(); // lockout key -> attempts being checked
+const inFlight = new Map(); // client IP -> attempts being checked
 let inFlightTotal = 0;
 
 /** Reserves a slot for a password check: returns its release function, or null when busy. */
 function beginAttempt(req) {
-  const keys = lockoutKeys(req);
-  if (inFlightTotal >= MAX_INFLIGHT_TOTAL || keys.some((k) => (inFlight.get(k) ?? 0) >= MAX_INFLIGHT_PER_IP)) {
-    return null;
-  }
-  for (const k of keys) inFlight.set(k, (inFlight.get(k) ?? 0) + 1);
+  const ip = String(req.ip ?? req.socket?.remoteAddress ?? '-');
+  if (inFlightTotal >= MAX_INFLIGHT_TOTAL || (inFlight.get(ip) ?? 0) >= MAX_INFLIGHT_PER_IP) return null;
+  inFlight.set(ip, (inFlight.get(ip) ?? 0) + 1);
   inFlightTotal++;
   return () => {
-    for (const k of keys) {
-      const n = inFlight.get(k) - 1;
-      if (n > 0) inFlight.set(k, n);
-      else inFlight.delete(k);
-    }
+    const n = inFlight.get(ip) - 1;
+    if (n > 0) inFlight.set(ip, n);
+    else inFlight.delete(ip);
     inFlightTotal--;
   };
 }
