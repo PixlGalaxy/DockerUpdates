@@ -1,30 +1,50 @@
 version: 2
+# Minor/patch bumps are grouped into one PR per area and merged automatically
+# by dependabot-auto-merge.yml once the build passes. Every major bump gets its
+# own PR and waits for a manual review, so one breaking major can't block the rest.
 updates:
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    open-pull-requests-limit: 15
     schedule:
-      interval: weekly
+      interval: "daily"
     groups:
-      actions:
-        patterns: ['*']
+      frontend-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  - package-ecosystem: npm
-    directory: /frontend
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    open-pull-requests-limit: 15
     schedule:
-      interval: weekly
+      interval: "daily"
     groups:
-      frontend-minor-patch:
-        update-types: [minor, patch]
+      backend-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
-  - package-ecosystem: npm
-    directory: /backend
+  - package-ecosystem: "docker"
+    directory: "/"
+    open-pull-requests-limit: 5
     schedule:
-      interval: weekly
+      interval: "weekly"
     groups:
-      backend-minor-patch:
-        update-types: [minor, patch]
+      docker-deps:
+        patterns:
+          - "*"
 
-  - package-ecosystem: docker
-    directory: /
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    open-pull-requests-limit: 5
     schedule:
-      interval: weekly
+      interval: "weekly"
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
