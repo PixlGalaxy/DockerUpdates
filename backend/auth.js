@@ -281,6 +281,34 @@ function registerFailure(req, username) {
   if (recentFailures.length > RECENT_FAILURES_MAX) recentFailures.length = RECENT_FAILURES_MAX;
 }
 
+// A failure only counts once its check has finished, so a burst of parallel attempts would all
+// reach scrypt before the lockout starts. Attempts still being checked are capped per address
+// and in total; extra ones are refused at once.
+const MAX_INFLIGHT_PER_IP = 2;
+const MAX_INFLIGHT_TOTAL = 10;
+const inFlight = new Map(); // lockout key -> attempts being checked
+let inFlightTotal = 0;
+
+/** Reserves a slot for a password check: returns its release function, or null when busy. */
+function beginAttempt(req) {
+  const keys = lockoutKeys(req);
+  if (inFlightTotal >= MAX_INFLIGHT_TOTAL || keys.some((k) => (inFlight.get(k) ?? 0) >= MAX_INFLIGHT_PER_IP)) {
+    return null;
+  }
+  for (const k of keys) inFlight.set(k, (inFlight.get(k) ?? 0) + 1);
+  inFlightTotal++;
+  return () => {
+    for (const k of keys) {
+      const n = inFlight.get(k) - 1;
+      if (n > 0) inFlight.set(k, n);
+      else inFlight.delete(k);
+    }
+    inFlightTotal--;
+  };
+}
+
+const BUSY_MESSAGE = 'Too many login attempts at once, try again in a moment';
+
 setInterval(() => {
   const now = Date.now();
   for (const [ip, e] of ipFailures) {
@@ -300,16 +328,25 @@ export async function login(req, res) {
   if (typeof username !== 'string' || typeof password !== 'string' || username.length > 256 || password.length > 1024) {
     return res.status(400).json({ error: 'Invalid username or password' });
   }
+  const release = beginAttempt(req);
+  if (!release) {
+    res.set('Retry-After', '2');
+    return res.status(429).json({ error: BUSY_MESSAGE });
+  }
   // Evaluate both comparisons to avoid leaking which one failed.
   const user = currentUser();
-  const userOk = safeEqual(username, user);
-  const passOk = await passwordMatches(password);
-  if (!(userOk && passOk)) {
-    const shown = username.slice(0, 64).replace(/[^\w.@-]/g, '?');
-    registerFailure(req, shown);
-    audit(req, `login failed user="${shown}"`);
-    await sleep(FAILURE_DELAY_MS);
-    return res.status(400).json({ error: 'Invalid username or password' });
+  try {
+    const userOk = safeEqual(username, user);
+    const passOk = await passwordMatches(password);
+    if (!(userOk && passOk)) {
+      const shown = username.slice(0, 64).replace(/[^\w.@-]/g, '?');
+      registerFailure(req, shown);
+      audit(req, `login failed user="${shown}"`);
+      await sleep(FAILURE_DELAY_MS);
+      return res.status(400).json({ error: 'Invalid username or password' });
+    }
+  } finally {
+    release();
   }
   for (const key of lockoutKeys(req)) ipFailures.delete(key);
   res.cookie(COOKIE, createSession(user, req), {
@@ -445,11 +482,17 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 async function verifyCurrentPassword(req, password) {
   const wait = lockedFor(req);
   if (wait) throw httpError(429, `Too many failed attempts, try again in ${Math.ceil(wait / 60_000)} min`);
-  if (typeof password !== 'string' || !password || password.length > 1024 || !(await passwordMatches(password))) {
-    registerFailure(req, currentUser());
-    audit(req, `user="${req.user}" entered a wrong current password`);
-    await sleep(FAILURE_DELAY_MS);
-    throw httpError(400, 'The current password is not correct');
+  const release = beginAttempt(req);
+  if (!release) throw httpError(429, BUSY_MESSAGE);
+  try {
+    if (typeof password !== 'string' || !password || password.length > 1024 || !(await passwordMatches(password))) {
+      registerFailure(req, currentUser());
+      audit(req, `user="${req.user}" entered a wrong current password`);
+      await sleep(FAILURE_DELAY_MS);
+      throw httpError(400, 'The current password is not correct');
+    }
+  } finally {
+    release();
   }
 }
 

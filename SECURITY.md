@@ -39,12 +39,13 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 - Sessions are revocable on logout or from Admin Panel > Dashboard (sign out one browser or every other one), and expire after the idle timeout (default 120 minutes) or the session lifetime (default 12 hours). Both are set in Settings > Login & sessions; `SESSION_IDLE_MINUTES` / `SESSION_HOURS` only give the initial values. They are persisted in the data volume so updates do not log you out; only a SHA-256 hash of each session id is stored, and changing `ADMIN_USER`, `ADMIN_PASSWORD` or `SESSION_SECRET` invalidates all of them.
 - The container console runs a shell inside containers (`docker exec`). It uses a WebSocket that requires a valid session and an `Origin` matching the app, and every console session is written to the audit log.
 - Notification secrets (webhook URLs, bot tokens) are stored in the data volume and never sent back to the browser in clear text.
+- Secrets saved in the app (notification webhook URLs and tokens, registry tokens, the session secret set in Settings) are stored **unencrypted** in the data volume, like `.env` values on disk. Anyone who can read that volume can read them: keep it readable by root only and leave it out of shared backups.
 
 ### Built-in protections
 
 | Area | Protection |
 | --- | --- |
-| Login | Per-IP lockout (default 5 failures / 15 min), global lockout (default 30 failures / 15 min), both adjustable in Settings > Login & sessions; 1 s delay on failures, constant-time comparison. Lockouts can be lifted from Admin Panel > IP access. Without `TRUST_PROXY`, the lockout also counts the address that opened the connection, so fake `X-Forwarded-For` values cannot dodge it |
+| Login | Per-IP lockout (default 5 failures / 15 min), global lockout (default 30 failures / 15 min), both adjustable in Settings > Login & sessions; 1 s delay on failures, constant-time comparison, at most 2 password checks at a time per address (10 in total), so a burst of parallel attempts cannot get past the lockout or tie up the server. Lockouts can be lifted from Admin Panel > IP access. Without `TRUST_PROXY`, the lockout also counts the address that opened the connection, so fake `X-Forwarded-For` values cannot dodge it |
 | Passwords | App refuses to start with a default or < 8 character password |
 | Cookies | `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS (or forced with `COOKIE_SECURE=true`), HMAC-signed |
 | CSRF / CORS | Same-origin only API: no CORS headers, preflights rejected, cross-site fetches rejected, `Origin` must match the app for every state-changing request (also blocks sibling subdomains behind the same proxy) |
@@ -60,6 +61,7 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 
 | Date | Severity | Issue | Fix |
 | --- | --- | --- | --- |
+| 2026-10-11 | Low | A failed login only counted toward the lockout once its password check had finished, so a burst of parallel attempts all reached the scrypt hash before the lockout started and could keep the server busy. | Password checks still running are capped per address (2) and in total (10); extra attempts get a 429 at once. |
 | 2026-10-09 | Low | Requests rejected for a wrong `Origin` (API and console WebSocket) were logged without limit, and they need no session. A flood could push real audit entries out of the in-memory log in Admin Panel > Server logs (`docker logs` kept them). | One audit line per address per minute for events that need no session. |
 | 2026-10-09 | Low | In Settings > Registry credentials, changing the host of a row while keeping the masked token reused the token of the previous host, so it would have been sent to the new registry. | A masked token is only kept for the same host; a new host asks for the token again. |
 | 2026-10-04 | Medium | With `TRUST_PROXY` unset (the default), every host on a private network was trusted to send `X-Forwarded-For`. A LAN client could send a different fake IP on each attempt and bypass the per-IP login lockout (only the global limit of 30 attempts / 15 min applied). It could also forge the IP written to the audit log. | The lockout also tracks the real connecting address when `TRUST_PROXY` is not set, audit lines include it as `via=`, and a startup warning asks for `TRUST_PROXY`. Behind a reverse proxy without `TRUST_PROXY`, failed logins through the proxy now share one lockout: set `TRUST_PROXY` to avoid that. |
