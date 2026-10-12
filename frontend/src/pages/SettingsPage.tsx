@@ -1,4 +1,4 @@
-import { Activity, Bell, Brush, Globe2, LoaderCircle, RefreshCw, Save, Send, Trash2, Undo2 } from 'lucide-react'
+import { Activity, Bell, Brush, Globe2, LoaderCircle, LocateFixed, RefreshCw, Save, Send, Trash2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
@@ -59,6 +59,8 @@ export default function SettingsPage({ toast, onError, onUserChange }: Props) {
   const [saved, setSaved] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Settings | null>(null)
   const [timezones, setTimezones] = useState<string[]>([])
+  // Time zone of this browser (Detect button, and a warning when schedules use another one)
+  const browserTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone ?? '', [])
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<Channel | null>(null)
   const [preview, setPreview] = useState<CleanupPreview | null>(null)
@@ -167,13 +169,36 @@ export default function SettingsPage({ toast, onError, onUserChange }: Props) {
       </div>
 
       <Card title="General" icon={<Globe2 size={18} />}>
-        <SettingRow label="Time zone" description="Used for every schedule (auto-update and cleanup).">
-          <input
-            list="timezones"
-            className={`${selectCls} w-64`}
-            value={draft.timezone}
-            onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-          />
+        <SettingRow
+          label="Time zone"
+          description={
+            <>
+              Used for every schedule (auto-update and cleanup).
+              {browserTz && draft.timezone !== browserTz && (
+                <span className="mt-1 block text-amber-600 dark:text-amber-400">
+                  This browser is in {browserTz}: schedules run on {draft.timezone} time.
+                </span>
+              )}
+            </>
+          }
+        >
+          <div className="flex items-center gap-2">
+            <input
+              list="timezones"
+              className={`${selectCls} w-64`}
+              value={draft.timezone}
+              onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+            />
+            <Button
+              size="xs"
+              icon={<LocateFixed size={12} />}
+              disabled={!browserTz || draft.timezone === browserTz}
+              onClick={() => setDraft({ ...draft, timezone: browserTz })}
+              title="Use the time zone of this browser"
+            >
+              Detect
+            </Button>
+          </div>
           <datalist id="timezones">
             {timezones.map((tz) => (
               <option key={tz} value={tz} />

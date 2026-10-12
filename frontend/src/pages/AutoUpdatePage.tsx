@@ -144,7 +144,15 @@ export default function AutoUpdatePage({ toast, onError }: Props) {
             )
           }
         />
-        <StatusTile label="Next global run" value={fmt(status?.nextRun ?? null)} />
+        <StatusTile
+          label="Next global run"
+          value={
+            <>
+              {fmt(status?.nextRun ?? null)}
+              {status?.nextRun && <Countdown to={status.nextRun} />}
+            </>
+          }
+        />
         <StatusTile
           label="Last run"
           value={
@@ -410,6 +418,23 @@ function Segmented({ value, onChange }: { value: AutoAction; onChange: (v: AutoA
       ))}
     </div>
   )
+}
+
+/** "in 23h 55m 12s" until `to`, ticking every second (its own timer: the page does not re-render). */
+function Countdown({ to }: { to: string }) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const left = Math.floor((new Date(to).getTime() - now) / 1000)
+  if (left <= 0) return <span className="ml-2 font-normal text-muted">now</span>
+  const d = Math.floor(left / 86400)
+  const h = Math.floor((left % 86400) / 3600)
+  const m = Math.floor((left % 3600) / 60)
+  const s = left % 60
+  const text = d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m ${s}s` : m ? `${m}m ${s}s` : `${s}s`
+  return <span className="ml-2 font-normal tabular-nums text-muted">in {text}</span>
 }
 
 function StatusTile({ label, value, action }: { label: string; value: React.ReactNode; action?: React.ReactNode }) {
