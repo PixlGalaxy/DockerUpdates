@@ -12,6 +12,7 @@ import type { HostInfo, HostUsage } from './types'
 const AutoUpdatePage = lazy(() => import('./pages/AutoUpdatePage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const AdminPage = lazy(() => import('./pages/admin/AdminPage'))
+const McpConsent = lazy(() => import('./components/McpConsent'))
 
 const pageFallback = (
   <div className="flex justify-center py-20 text-muted">
@@ -43,6 +44,14 @@ export default function App() {
         <Login onLogin={setUser} />
         <Footer />
       </div>
+    )
+  }
+  // An AI app asking for MCP access (OAuth): approve or deny once signed in
+  if (window.location.pathname === '/oauth/authorize') {
+    return (
+      <Suspense fallback={pageFallback}>
+        <McpConsent />
+      </Suspense>
     )
   }
   return <Dashboard user={user} onUserChange={setUser} onSignedOut={() => setUser(null)} />

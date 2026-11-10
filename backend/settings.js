@@ -58,7 +58,18 @@ export const DEFAULTS = {
     // 'dangling' = untagged images only, 'unused' = every image not used by a container
     mode: 'dangling',
   },
+  // MCP endpoint for AI assistants (Claude, ChatGPT...): see mcp.js
+  mcp: {
+    enabled: false,
+    // 'read' = look only, 'basic' = + start/stop/restart and updates, 'full' = + create, edit,
+    // remove, compose stacks and commands inside containers
+    level: 'read',
+    // Folder for the data of containers created by the AI ('' = detected from existing containers)
+    dataPath: '',
+  },
 };
+
+export const MCP_LEVELS = ['read', 'basic', 'full'];
 
 // Secret fields: never sent back to the browser in clear text
 const SECRETS = [
@@ -181,6 +192,11 @@ function validate(s) {
   if (!Number.isInteger(max) || max < 2 || max > 50) throw bad('Max restarts must be between 2 and 50');
   s.health.maxRestarts = max;
   validateSchedule(s.cleanup.schedule, 'Cleanup schedule');
+  s.mcp.enabled = Boolean(s.mcp.enabled);
+  if (!MCP_LEVELS.includes(s.mcp.level)) throw bad('Invalid AI access level');
+  s.mcp.dataPath = String(s.mcp.dataPath ?? '').trim().replace(/(.)\/+$/, '$1');
+  if (s.mcp.dataPath && !/^(\/|[A-Za-z]:[\\/])/.test(s.mcp.dataPath)) throw bad('Data folder must be an absolute path (e.g. /opt/appdata)');
+  if (/^\/var\/lib\/docker(\/|$)/.test(s.mcp.dataPath)) throw bad("Data folder cannot be inside Docker's own folder");
 }
 
 /** Internal update of the network section (used by macvlan.js only). */

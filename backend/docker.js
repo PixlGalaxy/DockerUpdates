@@ -427,7 +427,7 @@ function pullReporter(log) {
   };
 }
 
-async function pull(image, log = silent) {
+export async function pull(image, log = silent) {
   const authconfig = await authFor(image);
   const progress = pullReporter(log);
   try {
@@ -785,10 +785,11 @@ async function stackContainers(project) {
 }
 
 /** Validates and saves a new / edited managed stack; returns `run(log)` that deploys it. */
-export function prepareStackDeploy(body) {
+export function prepareStackDeploy(body, { check } = {}) {
   return prepareDeploy(body ?? {}, {
     projectInUse: async (name) => (await stackContainers(name)).length > 0,
     hostPath: (p) => hostPathFor(p).catch(() => null),
+    check,
   });
 }
 
@@ -1002,7 +1003,7 @@ const daemonLogDriver = () => {
   return logDriverPromise;
 };
 
-const withTag = (image) => {
+export const withTag = (image) => {
   const ref = image.trim();
   const slash = ref.lastIndexOf('/');
   return ref.includes('@') || ref.lastIndexOf(':') > slash ? ref : `${ref}:latest`;

@@ -1,7 +1,7 @@
 // Human-readable `docker run` equivalent of Docker API create options (shown in the update
 // log, like Unraid's "Command execution"). Secret-looking environment values are masked.
 
-const SECRET_KEY = /(pass(word)?|secret|token|api[_-]?key|private|credential|auth|cookie|session)/i;
+export const SECRET_KEY = /(pass(word)?|secret|token|api[_-]?key|private|credential|auth|cookie|session)/i;
 
 const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
 

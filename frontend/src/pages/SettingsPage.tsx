@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import Card, { SettingRow } from '../components/Card'
 import LanNetworkCard from '../components/LanNetworkCard'
+import McpCard from '../components/McpCard'
 import SecurityCard from '../components/SecurityCard'
 import ServerSettings from '../components/ServerSettings'
 import SupportCard from '../components/SupportCard'
@@ -411,6 +412,14 @@ export default function SettingsPage({ toast, onError, onUserChange }: Props) {
           )}
         </div>
       </Card>
+
+      <McpCard
+        value={draft.mcp}
+        onChange={(mcp) => setDraft({ ...draft, mcp })}
+        savedEnabled={saved.mcp.enabled}
+        toast={toast}
+        onError={onError}
+      />
 
       <ServerSettings toast={toast} onError={onError} onUserChange={onUserChange} />
 

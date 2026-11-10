@@ -324,6 +324,29 @@ export interface Settings {
     schedule: Schedule
     mode: 'dangling' | 'unused'
   }
+  /** MCP endpoint for AI assistants (Claude, ChatGPT...) */
+  mcp: {
+    enabled: boolean
+    level: McpLevel
+    /** Folder for the data of containers the AI creates ('' = detected) */
+    dataPath: string
+  }
+}
+
+export type McpLevel = 'read' | 'basic' | 'full'
+
+export interface McpAccess {
+  /** Apps connected with OAuth (approved in the browser) */
+  connections: { id: string; name: string; created: string; lastUsed: string; ip: string | null }[]
+  /** Access tokens created in Settings */
+  tokens: { id: string; name: string; created: string; lastUsed: string | null }[]
+  detectedDataPath: string | null
+}
+
+export interface McpAuthorizeInfo {
+  clientName: string
+  redirectHost: string
+  level: McpLevel
 }
 
 export interface RunResult {

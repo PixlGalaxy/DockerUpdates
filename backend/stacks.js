@@ -151,9 +151,10 @@ async function misplacedBinds(name, hostPath) {
  * accepts it; a rejected file leaves the previous one in place. Returns `run(log)`, which pulls
  * the images and starts the stack. `projectInUse(name)`: a compose project with that name
  * already has containers (started outside DockerUpdates). `hostPath(p)`: path of `p` on the
- * Docker host (null when it is not there).
+ * Docker host (null when it is not there). `check(config)` (optional): further checks on the
+ * normalized config (`docker compose config`); throwing rejects the file and restores the old one.
  */
-export async function prepareDeploy({ name, yaml, env = '', isNew }, { projectInUse, hostPath }) {
+export async function prepareDeploy({ name, yaml, env = '', isNew }, { projectInUse, hostPath, check }) {
   safeStackName(name);
   if (typeof yaml !== 'string' || !yaml.trim()) throw bad(400, 'The compose file is empty');
   if (yaml.length > MAX_SIZE || String(env).length > MAX_SIZE) throw bad(400, 'The compose file is too large');
@@ -177,6 +178,15 @@ export async function prepareDeploy({ name, yaml, env = '', isNew }, { projectIn
       'Use absolute host paths or named volumes, or mount a stacks folder at the same path on both sides:',
       '  -v /opt/stacks:/opt/stacks  and  STACKS_DIR=/opt/stacks',
     ].join('\n'));
+  }
+  // Extra rules of the caller (MCP: no Docker volumes), on the normalized compose config
+  if (check) {
+    try {
+      await check(JSON.parse(await compose(name, ['config', '--format', 'json'])));
+    } catch (err) {
+      await restore();
+      throw err;
+    }
   }
 
   const run = async (log = silent) => {

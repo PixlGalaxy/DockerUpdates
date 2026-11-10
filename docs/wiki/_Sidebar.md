@@ -13,6 +13,7 @@
 - [LAN network](LAN-Network.md)
 - [Compose stacks](Compose-Stacks.md)
 - [Admin Panel](Admin-Panel.md)
+- [AI assistants (MCP)](AI-Assistants.md)
 
 **Operations**
 - [Reverse proxy](Reverse-Proxy.md)

@@ -9,6 +9,8 @@ import * as auth from './auth.js';
 import { attachConsole } from './console.js';
 import * as dk from './docker.js';
 import { startHealthMonitor } from './health.js';
+import { mcpApi, mcpRouter } from './mcp.js';
+import { revokeAllConnections } from './mcpAuth.js';
 import { listHistory } from './history.js';
 import { startHostAddressDetection } from './hostAddress.js';
 import { hostUsage } from './hostUsage.js';
@@ -81,11 +83,15 @@ app.get('/api/version', (_req, res) => res.json({ version: VERSION }));
 app.post('/api/auth/login', auth.login);
 app.post('/api/auth/logout', auth.logout);
 
+// AI assistants (MCP endpoint + its OAuth server): own Bearer auth, 404 while disabled in Settings
+app.use(mcpRouter);
+
 // Everything below requires a valid session
 app.use('/api', auth.requireAuth);
 app.use('/api', auditLog);
 app.get('/api/auth/me', auth.me);
 app.use('/api/admin', adminRouter);
+app.use('/api/mcp', mcpApi);
 
 app.get('/api/containers', handle(async () => ({
   hostIp: dk.hostIp(),
@@ -280,6 +286,9 @@ app.put('/api/config', handle(async (req, res) => {
 app.post('/api/config/username', handle(async (req, res) => ({ ...(await auth.changeUsername(req, res)), config: await configView(req) })));
 app.post('/api/config/password', handle(async (req, res) => {
   await auth.changePassword(req, res);
+  // Apps connected over OAuth were approved with the old password: they must sign in again
+  const revoked = await revokeAllConnections();
+  if (revoked) auth.audit(req, `${revoked} MCP app connection(s) signed out after the password change`);
   return configView(req);
 }));
 app.get('/api/timezones', handle(() => Intl.supportedValuesOf('timeZone')));

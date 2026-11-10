@@ -39,6 +39,7 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 - Sessions are revocable on logout or from Admin Panel > Dashboard (sign out one browser or every other one), and expire after the idle timeout (default 120 minutes) or the session lifetime (default 12 hours). Both are set in Settings > Login & sessions; `SESSION_IDLE_MINUTES` / `SESSION_HOURS` only give the initial values. They are persisted in the data volume so updates do not log you out; only a SHA-256 hash of each session id is stored, and changing `ADMIN_USER`, `ADMIN_PASSWORD` or `SESSION_SECRET` invalidates all of them.
 - The container console runs a shell inside containers (`docker exec`). It uses a WebSocket that requires a valid session and an `Origin` matching the app, and every console session is written to the audit log.
 - Notification secrets (webhook URLs, bot tokens) are stored in the data volume and never sent back to the browser in clear text.
+- AI assistants (MCP, Settings > AI assistants) are **off by default**. When enabled, an app gets in only with an OAuth approval made by the signed-in admin on a consent page (which shows where the app sends you back) or with an access token created in Settings. Its access level (read only / basic actions / full control) is enforced on the server for every call. Connections can be revoked in Settings, and changing the password signs every OAuth app out.
 - Secrets saved in the app (notification webhook URLs and tokens, registry tokens, the session secret set in Settings) are stored **unencrypted** in the data volume, like `.env` values on disk. Anyone who can read that volume can read them: keep it readable by root only and leave it out of shared backups.
 
 ### Built-in protections
@@ -55,6 +56,7 @@ DockerUpdates is designed for a **single administrator** managing their own serv
 | IP bans | Admin Panel > IP access keeps a persistent list of banned IPs and CIDR ranges (data volume, `ip-bans.json`). Banned clients get a 403 for every request, including static files and the console WebSocket. Loopback, your own IP and your reverse proxy cannot be banned, so you cannot lock yourself out |
 | Icons | Size-limited (1 MB), type-checked downloads, served with a sandboxing CSP. Icon URLs from image labels are only followed when they are `http(s)` |
 | Registry credentials | Read-only mount of `~/.docker/config.json`, or `REGISTRY_AUTH`; never sent to the browser |
+| AI assistants (MCP) | OAuth 2.1 with PKCE (S256 only), one-time codes (60 s), 1 h access tokens, rotating refresh tokens (expire after 30 days unused); only SHA-256 hashes of tokens are stored (`mcp-auth.json`). Redirect URIs must be `https`, loopback `http`, or an app scheme. Editing, removing and running commands are marked destructive so the AI app asks the user first; DockerUpdates' own container cannot be stopped, edited, removed or entered. Containers and stacks created by the AI must keep their data in host folders: named and anonymous Docker volumes are refused. Secret-looking environment values are masked before they reach the AI |
 | Auditing | Logins, lockouts, bans, blocked origins and every state-changing API call are logged (`docker logs dockerupdates`). The last 5000 log lines are also shown in Admin Panel > Server logs (memory only, cleared on restart) |
 
 ## Fixed issues
@@ -80,5 +82,6 @@ When exposing DockerUpdates outside your LAN (e.g. through Nginx Proxy Manager):
 - [ ] Do not add CORS headers in the proxy configuration
 - [ ] Run the container with `--security-opt no-new-privileges`
 - [ ] Use registry tokens with read-only scope (`read:packages`)
+- [ ] Leave AI assistants (MCP) off unless you use them, give them the lowest access level that works, and disconnect apps you no longer use
 - [ ] Keep the image updated
 - [ ] Review Admin Panel > Server logs (or `docker logs dockerupdates`) for `[audit]` entries from time to time, and check Admin Panel > Dashboard for sessions you do not recognise

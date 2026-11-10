@@ -18,6 +18,8 @@ import type {
   NetworkInfo,
   LanDetection,
   LanStatus,
+  McpAccess,
+  McpAuthorizeInfo,
   RunResult,
   Schedule,
   SchedulePreview,
@@ -160,6 +162,15 @@ export const api = {
   previewSchedule: (schedule: Schedule) => post<SchedulePreview>('/api/schedule/preview', schedule),
   cleanupPreview: (mode?: string) => request<CleanupPreview>(`/api/cleanup/preview${mode ? `?mode=${mode}` : ''}`),
   runCleanup: () => post<CleanupResult>('/api/cleanup/run'),
+
+  // AI assistants (MCP): connected apps, access tokens, OAuth consent
+  mcp: () => request<McpAccess>('/api/mcp'),
+  createMcpToken: (name: string) => post<{ id: string; name: string; token: string }>('/api/mcp/tokens', { name }),
+  revokeMcpToken: (id: string) => request<Ok>(`/api/mcp/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  revokeMcpConnection: (id: string) => request<Ok>(`/api/mcp/connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  mcpAuthorizeInfo: (query: string) => request<McpAuthorizeInfo>(`/api/mcp/authorize${query}`),
+  mcpAuthorize: (query: Record<string, string>, approve: boolean) =>
+    post<{ redirect: string }>('/api/mcp/authorize', { query, approve }),
 }
 
 export const adminApi = {
