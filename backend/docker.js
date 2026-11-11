@@ -554,8 +554,9 @@ async function userConfig(inspect) {
  * Rolls back to the old container if anything fails. Used directly and by the self-update helper.
  */
 export async function recreateContainer(id, buildOptions, log = silent) {
-  const old = docker.getContainer(id);
-  const inspect = await old.inspect();
+  const inspect = await docker.getContainer(id).inspect();
+  // By ID: `id` may be the name, which belongs to the new container once the old one is renamed
+  const old = docker.getContainer(inspect.Id);
   const name = cleanName(inspect.Name);
   const wasRunning = inspect.State.Running;
   const config = await userConfig(inspect);
