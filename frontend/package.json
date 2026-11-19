@@ -23,7 +23,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.3.0",
     "autoprefixer": "^10.6.2",
-    "oxlint": "^1.93.0",
+    "oxlint": "^1.94.0",
     "postcss": "^8.5.33",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
