@@ -1,5 +1,5 @@
 # ---------- Stage 1: frontend build ----------
-FROM node:26-alpine AS frontend-build
+FROM node:26.13.1-alpine AS frontend-build
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
@@ -9,7 +9,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------- Stage 2: production ----------
-FROM node:26-alpine
+FROM node:26.13.1-alpine
 
 # Short commit SHA injected by CI (shown in the UI footer)
 ARG APP_VERSION=dev
